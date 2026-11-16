@@ -1,6 +1,6 @@
-# Systems reference — v1.0
+# Systems reference — v1.1
 
-2026-11-16; observed baseline `294a75c`. This is an implementation-oriented design map, not a new balance pass. Numeric sources: `constants.ts` and `engine.ts`; known contradictions: [decision register](DECISIONS.md). Existing in-app § references describe its own GDD, not section numbers in this document.
+2026-11-16; economic behavior from baseline `294a75c`, infrastructure updated for Next.js/SQLite. This is an implementation-oriented design map, not a new balance pass. Numeric sources: `constants.ts` and `engine.ts`; known contradictions: [decision register](DECISIONS.md). Existing in-app § references describe its own GDD, not section numbers in this document.
 
 ## Motivation and loops
 
@@ -21,8 +21,8 @@ Target feeling is informed control, not surprise bankruptcy. Meaningful decision
 | Resource operation | Make resilience matter; choose production vs capacity | Operational buildings → power/food/materials, upkeep/revenue, crew/storage; `flows` + hourly tick | Brownout halves production efficiency; empty food/overcapacity lower morale. Trade/build/maintenance are recovery levers; storage stocks can spoil. |
 | Condition/maintenance | Keep old assets relevant; choose repair timing | Hourly condition decay 0.08; below 40 condition multiplier 0.6. `maintain` costs round((100−condition)×45), restores 100 | Insufficient credits rejected. At exactly 40 penalty is not yet active. Current multiplier affects power demand as well as output. |
 | Trade/roads | Give surplus an outlet; choose timing/partner/infrastructure | Buy/sell food/materials against bot inventory/purse; price depends on market/relation/modifiers; grade upgrades affect capacity | Per-bot cooldown 6 sim-hours; quantity capped by `tradeCapacity`; insufficient stock/cash refuses. Power/credits trades rejected. Roads/partners are simulated, not real player contracts. |
-| Executive board/stance | Explain bottlenecks and schedule tradeoffs; choose whose advice to follow | Chat/digest → advisory text; stance modifies phase speed/design quality | Disabled/no-key → local rules; endpoint errors → local fallback. No timeout. Text never directly executes actions. Local facts/prompt grounding need regression checks. |
-| Speed/persistence | Let players control waiting; choose pace | 0/1/4/16× → timer cadence, local state and debounced saves | No offline progress/server clock; browser throttling and fast-tick save starvation. JSON reset is destructive; export contains keys. |
+| Executive board/stance | Explain bottlenecks and schedule tradeoffs; choose whose advice to follow | Chat/digest → advisory text; stance modifies phase speed/design quality | Disabled/missing operator config → local rules; endpoint errors → local fallback. Bounded server timeout and local fallback. Text never directly executes actions. Local facts/prompt grounding need regression checks. |
+| Speed/persistence | Let players control waiting; choose pace | 0/1/4/16× → timer cadence, local simulation and queued server snapshots | No offline progress/server clock; browser throttling/network/storage failures can delay saving. JSON reset is destructive; export strips keys. |
 | Progression/visits | Make expansion and neighboring activity visible | XP → CEO level/tier access; generated remote plans → visits | Neighbors/presence/security affordances are local simulation, not authorization. Read-only visit UI is not a multiplayer permission system. |
 
 ## Balance levers and rationale
@@ -51,4 +51,9 @@ Balance proposals must compare a reproducible starting state and controlled time
 
 ## Revision log
 
+- v1.1 — 2026-11-16: server snapshot save status/recovery and operator-only AI transport; no balance changes.
 - v1.0 — 2026-11-16: current-system inventory and balance provenance; no tuning changed.
+
+## Persistence interaction contract (v1.1)
+
+Purpose: make progress durable without changing player scheduling choices. Feeling: confidence plus explicit control over destructive recovery. Input: current snapshot + expected revision. Output: saved revision, visible error, or conflict. Ticks coalesce on a four-second deadline (bounded ordinary loss versus write load); actions flush promptly. One write in flight; no silent last-writer-wins. Edge: initial loading never writes defaults, reset retains revision, legacy/server coexist requires a player choice. Failure: retain pending memory, offer retry/export; conflict requires export/load/replace choice. Accounts, offline progression and shared world authority remain absent. Tests: happy save/reload; stale revision; write/network failure and recovery, including legacy keys.

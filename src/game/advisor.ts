@@ -1,4 +1,4 @@
-import { ARCHETYPES, ARCHETYPE_BY_ID, EXEC_META, PHASE_CONFIG } from "./constants";
+import { ARCHETYPES, ARCHETYPE_BY_ID, PHASE_CONFIG } from "./constants";
 import { flows, priceFor, systemMods, tradeCapacity } from "./engine";
 import type { AIConfig, ChatMessage, ExecRole, GameState } from "./types";
 
@@ -153,41 +153,19 @@ export async function askExec(
   s: GameState,
   ai: AIConfig,
 ): Promise<{ text: string; source: "live-api" | "local-model"; error?: string }> {
-  if (!ai.enabled || !ai.apiKey.trim()) {
-    await new Promise((r) => setTimeout(r, 420 + Math.random() * 500));
-    return { text: localAdvice(role, prompt, s), source: "local-model" };
-  }
-  const meta = EXEC_META[role];
-  const body = {
-    model: ai.model,
-    temperature: ai.temperature,
-    messages: [
-      { role: "system", content: `${meta.system}\n\nYou are ${meta.name}, ${meta.title} of ${s.company}. Address the CEO directly. Be specific and quantitative.\n\n${stateDigest(s)}` },
-      ...history.slice(-8).map((m) => ({
-        role: m.role === "ceo" ? "user" : "assistant",
-        content: m.author ? `[${m.author}] ${m.text}` : m.text,
-      })),
-      { role: "user", content: prompt },
-    ],
-  };
+  if (!ai.enabled) return { text: localAdvice(role, prompt, s), source: "local-model" };
   try {
-    const res = await fetch(`${ai.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ai.apiKey}` },
-      body: JSON.stringify(body),
+    const res = await fetch('/api/advisor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, history: history.slice(-8), prompt, state: s }),
+      signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const json = await res.json();
-    const text = json?.choices?.[0]?.message?.content?.trim();
-    if (!text) throw new Error("Empty completion");
-    return { text, source: "live-api" };
-  } catch (err) {
-    await new Promise((r) => setTimeout(r, 300));
-    return {
-      text: localAdvice(role, prompt, s),
-      source: "local-model",
-      error: `Endpoint unreachable (${(err as Error).message}) — fell back to the grounded local advisor.`,
-    };
+    if (!res.ok) throw new Error('Advisor unavailable');
+    const data = await res.json();
+    if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('Empty advisor response');
+    return { text: data.text, source: 'live-api' };
+  } catch {
+    return { text: localAdvice(role, prompt, s), source: 'local-model', error: 'Live advisor unavailable — using local advice.' };
   }
 }
 

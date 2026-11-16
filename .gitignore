@@ -2,3 +2,15 @@ node_modules/
 .next/
 .env
 dist/
+.env.*
+!.env.example
+*.sqlite*
+*.db
+*.db-*
+*.backup
+/data/
+/backups/
+*.tsbuildinfo
+/test-results/
+/playwright-report/
+next-env.d.ts

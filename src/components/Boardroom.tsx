@@ -71,7 +71,7 @@ export default function Boardroom() {
 
         {state.execs.map((e) => {
           const m = EXEC_META[e.role];
-          const live = e.ai.enabled && !!e.ai.apiKey.trim();
+          const live = e.ai.enabled;
           return (
             <div
               key={e.role}
@@ -90,7 +90,7 @@ export default function Boardroom() {
                   <div className="eyebrow !text-[8.5px]">{m.title}</div>
                   <div className="num mt-0.5 flex flex-wrap items-center gap-1.5 text-[9px] text-dim">
                     <span style={{ color: m.color }}>{m.domain}</span>
-                    <Chip color={live ? m.color : "#647c84"}>{live ? e.ai.model : "LOCAL ADVISOR"}</Chip>
+                    <Chip color={live ? m.color : "#647c84"}>{live ? "SERVER AI / FALLBACK" : "LOCAL ADVISOR"}</Chip>
                   </div>
                 </div>
               </div>
@@ -123,7 +123,7 @@ export default function Boardroom() {
                       ] as ChatMessage[],
                     }));
                     setBusy(false);
-                    toast(res.source === "live-api" ? `${e.ai.model} responded.` : `Fell back to local advisor — ${res.error ?? "endpoint not enabled"}`, res.source === "live-api" ? "good" : "bad");
+                    toast(res.source === "live-api" ? `Server advisor responded.` : `Fell back to local advisor — ${res.error ?? "endpoint not enabled"}`, res.source === "live-api" ? "good" : "bad");
                   }}
                 />
               )}
@@ -142,9 +142,9 @@ export default function Boardroom() {
             </pre>
           )}
           <p className="num border-t border-line px-3 py-2 text-[9px] leading-snug text-dim">
-            The digest is injected as system context on every call, so a live model can only reason over
-            numbers that actually exist in the simulation. The local advisor is bound to the same digest —
-            identical contract, zero network.
+            The digest grounds live advice, but model claims still need verification. Enabled live advice
+            sends city data and recent chat to the operator-configured provider. Local advice uses rules,
+            requires no network, and never executes actions.
           </p>
         </Panel>
       </div>
@@ -321,36 +321,13 @@ function ModelConfig({
         {role} model endpoint · OpenAI-compatible /chat/completions
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="block">
-          <span className="num text-[9px] text-dim">BASE URL</span>
-          <input className="field mt-0.5" value={local.baseUrl} placeholder="https://api.openai.com/v1" onChange={(e) => setLocal({ ...local, baseUrl: e.target.value })} />
-        </label>
-        <div className="grid grid-cols-2 gap-1.5">
-          <label className="block">
-            <span className="num text-[9px] text-dim">MODEL</span>
-            <input className="field mt-0.5" value={local.model} placeholder="gpt-4o-mini" onChange={(e) => setLocal({ ...local, model: e.target.value })} />
-          </label>
-          <label className="block">
-            <span className="num text-[9px] text-dim">TEMPERATURE {local.temperature.toFixed(2)}</span>
-            <input type="range" min={0} max={1.4} step={0.05} value={local.temperature} onChange={(e) => setLocal({ ...local, temperature: Number(e.target.value) })} className="mt-2 w-full accent-[#35d6c0]" />
-          </label>
-        </div>
-        <label className="block">
-          <span className="num text-[9px] text-dim">API KEY (stored locally in this browser only)</span>
-          <input className="field mt-0.5" type="password" value={local.apiKey} placeholder="sk-…" onChange={(e) => setLocal({ ...local, apiKey: e.target.value })} />
-        </label>
+        <p className="text-xs text-mist">Provider, model and credentials are operator-configured on the server. Browser API-key entry is not supported. Missing configuration uses local advice.</p>
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={local.enabled} onChange={(e) => setLocal({ ...local, enabled: e.target.checked })} className="accent-[#35d6c0]" />
-          <span className="num text-[10px] text-mist">Route {role.toUpperCase()} to this endpoint</span>
+          <input type="checkbox" checked={local.enabled} onChange={e => setLocal({ ...local, enabled: e.target.checked })} />
+          <span>Use server advisor for {role.toUpperCase()}</span>
         </label>
-        <div className="mt-1 flex gap-1.5">
-          <Btn size="sm" variant="primary" onClick={() => onSave(local)}>
-            <Icon.check size={12} /> Save
-          </Btn>
-          <Btn size="sm" variant="teal" disabled={!local.enabled || !local.apiKey.trim()} onClick={() => onTest(local)}>
-            Test connection
-          </Btn>
-        </div>
+        <Btn size="sm" onClick={() => onSave(local)}>Save preference</Btn>
+        <Btn size="sm" disabled={!local.enabled} onClick={() => onTest(local)}>Test server advisor</Btn>
         <div className="mt-1">
           <KV k="System prompt" v={`${m.system.length} chars · fixed`} />
           <KV k="Fallback" v="grounded local advisor" tone="#35d6c0" />

@@ -196,7 +196,7 @@ export default function Onboarding() {
             {[
               ["2 alliance bots", "a supplier and an offtaker placed within 7 km, each with their own purse, inventory and relation score"],
               ["connecting roads", "surveyed polylines from your claim centre to both partners, upgradable gravel → asphalt → arterial"],
-              ["3 executive bots", "CTO ATLAS, CFO LEDGER, COO RELAY — each with a configurable model endpoint and their own SDLC lane"],
+              ["3 executive bots", "CTO ATLAS, CFO LEDGER, COO RELAY — each with optional server-managed AI advice and their own SDLC lane"],
               ["2 site bots per building", "security and reception, provisioned at Deploy and walkable in first person"],
             ].map(([t, d]) => (
               <li key={t} className="flex gap-2 text-[11.5px] leading-snug text-mist">

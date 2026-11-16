@@ -139,8 +139,6 @@ export interface Project {
 }
 
 export interface AIConfig {
-  baseUrl: string;
-  apiKey: string;
   model: string;
   temperature: number;
   enabled: boolean;

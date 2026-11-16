@@ -1,3 +1,4 @@
+import { parseSaveText, parseSave } from '../persistence/validation';
 import { useRef, useState } from "react";
 import {
   ARCHETYPES,
@@ -66,7 +67,7 @@ export default function GDD() {
           <SaveTab
             fileRef={fileRef}
             onExport={() => {
-              const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+              const blob = new Blob([JSON.stringify(parseSave(state), null, 2)], { type: "application/json" });
               const a = document.createElement("a");
               a.href = URL.createObjectURL(blob);
               a.download = `simplayz-${state.company.replace(/\s+/g, "-").toLowerCase()}-h${state.economy.tick}.json`;
@@ -76,8 +77,9 @@ export default function GDD() {
             }}
             onImport={async (file: File) => {
               try {
-                const parsed = JSON.parse(await file.text());
-                if (parsed?.schema !== 4) throw new Error(`schema ${parsed?.schema} ≠ 4`);
+                if (file.size > 4 * 1024 * 1024) throw new Error('Save exceeds 4 MiB.');
+                const parsed = parseSaveText(await file.text());
+                if (!window.confirm('Replace current progress with this imported save? Export first to keep a copy.')) return;
                 dispatch({ type: "hydrate", state: parsed });
                 toast("Save imported and hydrated.", "good");
               } catch (e) {
@@ -86,7 +88,6 @@ export default function GDD() {
             }}
             onReset={() => {
               hardReset();
-              toast("Registry wiped. Back to the claim form.", "bad");
             }}
           />
         )}
@@ -469,7 +470,7 @@ function SaveTab({
       <h3 className="display mt-1 text-[26px] leading-none text-chalk">SAVE &amp; STATE</h3>
       <div className="panel mt-3 p-3">
         <KV k="Schema" v={state.schema} />
-        <KV k="Storage key" v="simplayz.save.v4 (localStorage)" />
+        <KV k="Storage key" v="Server SQLite · schema 4" />
         <KV k="CEO / company" v={`${state.ceoName} · ${state.company}`} />
         <KV k="Claim centre" v={`${state.claim!.center.lat.toFixed(4)}, ${state.claim!.center.lng.toFixed(4)} (${state.claim!.placedBy})`} />
         <KV k="Sim hour" v={`${state.economy.tick} (day ${(state.economy.tick / 24).toFixed(1)})`} />
@@ -498,9 +499,9 @@ function SaveTab({
           />
         </div>
         <p className="num mt-3 border-l-2 border-signal/60 pl-2 text-[10px] leading-snug text-dim">
-          Client-side persistence is a prototype decision, not an architecture. The moment Q2 is answered, the
-          reducer stays and the storage adapter swaps — the tick function is already pure, so a server can run
-          the identical simulation authoritatively.
+          Server SQLite stores isolated anonymous-session snapshots. Simulation remains client-driven;
+          neighboring CEOs are simulated. Export before clearing cookies. Reset clears the game and advisor
+          preferences after the server write succeeds. Credentials are operator-managed, never exported.
         </p>
       </div>
     </div>

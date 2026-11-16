@@ -1,14 +1,14 @@
-# Architecture and source map — v1.0
+# Architecture and source map — v2.0
 
-Audit: 2026-11-16, baseline `294a75c`. This describes source, not a proposed backend.
+2026-11-16: Next.js/SQLite migration. Gameplay simulation and economic formulas remain unchanged.
 
 ## Runtime
 
-`index.html` → `src/main.tsx` (React StrictMode) → `App.tsx` → `GameProvider` → onboarding or six-screen console.
+`src/app/layout.tsx` loads global/Tailwind/Leaflet CSS and font links. `page.tsx` is a client entry that dynamically imports `App.tsx` with SSR disabled: Leaflet, Three.js, browser storage and pointer lock never execute on the server. Next StrictMode remains enabled. Components below that boundary are client modules transitively.
 
-Player input → typed `Action` → `reducer` → `GameState` → React views/derived selectors. `store.tsx` owns the browser interval and save side effects. It dispatches one simulation hour per tick; base interval is 1,000 ms, divided by speed. There is no server clock or offline elapsed-time catch-up. Browser throttling affects progression.
+`App` → `GameProvider` loads `/api/game` before gameplay mounts. Player inputs → typed reducer actions → `GameState` → UI. One tick is still one simulation hour, at pause/1×/4×/16×; no offline catch-up/server ticks.
 
-`vite.config.ts` combines React, Tailwind v4 and `vite-plugin-singlefile`; `@/` resolves to `src/`. `npm run build` bundles without typechecking. No router, HTTP server API, database, auth, WebSocket client, or synchronization layer exists.
+Next Node-runtime routes → same-origin/content/size/session checks → Zod snapshot validation → SQLite. `server-only` guards prevent database/credential code entering client bundles. Drizzle parameterizes SQL; better-sqlite3 runs local transactions with WAL, foreign keys and a 5-second busy timeout. Full-repository `next start` deployment is supported, not static export/standalone packaging or ephemeral hosts.
 
 ## Find the right file
 
@@ -35,29 +35,33 @@ Player input → typed `Action` → `reducer` → `GameState` → React views/de
 | Navigation, speed/summary/ticker/toasts | `src/components/Shell.tsx` |
 | Shared controls/icons, style tokens | `src/components/ui.tsx`, `src/index.css`, `src/utils/cn.ts` |
 
-## State and persistence contracts
+## Persistence contracts
 
-- `GameState` includes economy, claim, sectors/sites, buildings/plans, projects, executives **and AI keys**, simulated peers/bots/roads, logs and design question answers.
-- `UiState` contains screen/selection/visit metadata, chat, toast and boot status; not saved with game state.
-- Save key `simplayz.save.v4`, schema `4`. Startup accepts matching schema plus a truthy claim. GDD import checks only schema; `hydrate` directly returns supplied state. Neither validates the entire object.
-- Autosave uses a **700 ms debounce on every state change**. At continuous 4×/16×, ticks can continually cancel the pending save. Do not promise a fixed save interval or reliable accelerated-play persistence.
-- Storage quota/write errors are swallowed; play continues in memory. Reset removes the key and returns to onboarding. Export serializes all game state, without secret redaction.
-- `FloorPlan.cells[y * w + x]` has `w*h` cells; dimensions are metres, cell types 0 void / 1 floor / 2 wall / 3 door / 4 glass. Project `draft` is promoted into building `plan` on deployment. Keep 2D, 3D and collision semantics aligned.
-
-## Geography and remote requests
-
-Leaflet uses `[lat, lng]` tuples and named `{lat, lng}` centers. GeoJSON uses `[lng, lat]` if introduced later: convert at a named boundary. `claimCorners` uses a local small-angle approximation, not an exact global cadastral grid. Polar cosine is clamped; antimeridian/polar validity and claim collision are not solved. Independent player-selected centers do **not** guarantee non-overlapping claims.
-
-Both onboarding and world map request `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`. Roads are synthetic Manhattan-bend polylines (`roadPath` returns five points), not routes on OSM ways. Resource sectors/sites and peers are generated, not extracted from OSM. Google Fonts load from `index.html`. Tile/fonts/API access may fail in restricted environments; bundling does not verify these requests. Review OSM service policies before scale: https://operations.osmfoundation.org/policies/tiles/ and attribution guidance: https://www.openstreetmap.org/copyright (reference links, not a policy compliance audit).
+- `src/persistence/validation.ts` validates every game entity, finite numeric bounds, plan dimensions, entity uniqueness and key references. Legacy/unknown fields including AI keys/URLs are stripped. Debt, executive load above 100 and existing overspent project behavior are preserved. Limits are transport-safety ceilings, not economic tuning; near-pole/world-wrap states outside accepted coordinate bounds are refused rather than normalized.
+- `src/persistence/queue.ts` serializes/coalesces writes with a non-resetting four-second deadline; new pending data during writes is flushed after completion. Failure retains pending state; retry is explicit. Revision conflict blocks autosave until the player makes a recovery choice.
+- `src/persistence/client.ts` owns relative fetches, bounded client timeouts, clean exports and legacy redaction.
+- `src/state/store.tsx` gates simulation on initial load/legacy choice, schedules urgent action saves, and exposes loading/saving/saved/error/conflict UI. Browser data is only a legacy migration source, not new-save persistence.
+- `src/server/database.ts` owns SQLite, migrations and revisioned session rows. `sessions.id` is a hash of a 256-bit cookie token, not the token itself. `saves` holds one nullable snapshot per session with timestamps and monotonically increasing revision. Reset leaves a revisioned tombstone, preventing stale pre-reset writes.
+- `migrations/0001_initial.sql` + `PRAGMA user_version=1` are the ordered migration baseline; extend the migration runner and add a new SQL file for future DB changes. Game schema remains 4, without secret config fields; legacy schema-4 saves are parsed/sanitized on import.
+- `src/server/http.ts` centralizes origin/session/streamed-body limits and bounded single-process rate buckets. GET may issue a new cookie; PUT requires a valid session and integer expected revision. PUT state `null` is reset. Routes return no-store responses and sanitized errors.
+- `src/server/game-api.ts` implements testable handlers; `src/app/api/game/route.ts` supplies the real DB. GET returns `{state,revision,createdAt,updatedAt}`; PUT `{state,revision}` returns `{revision}`. Errors: 400 invalid, 401 session, 403 origin, 409 stale, 413 size, 415 content type, 429 rate, 503 storage.
+- `UiState` (chat/selection/toasts/visit) is not persisted. Game snapshots still contain private company/location data, but never API credentials.
 
 ## AI boundary
 
-`EXEC_META[role].system` + company/role wrapper + `stateDigest` + last eight history messages + current user input → POST `${baseUrl}/chat/completions`. Default disabled config: `gpt-4o-mini`, temperature `0.6`, OpenAI base URL. These defaults are configuration, not proof of provider availability or evaluated model behavior.
+`askExec` retains local rule-based fallback. Enabled preferences send the validated state, current input and up to eight messages to `/api/advisor`. `advisor-api.ts` reconstructs the existing executive v1 system wrapper/digest/history contract. Operator environment controls endpoint/model/key; no client URL proxy or BYOK storage exists. Temperature remains a non-secret player preference. Server adds a 400-token completion budget, a 100–12,000 ms timeout (10,000 default), no redirects, per-session/global rate limits, and sanitized errors. Client fallback also handles a 15-second timeout. Prompt content is unchanged; the existing duplicate latest CEO turn remains to avoid unrelated prompt changes. See `docs/prompts/EXECUTIVES.md` for evaluation contract.
 
-`askExec` uses direct browser fetch and bearer credentials; endpoint must allow browser CORS. Non-OK HTTP, invalid JSON, empty completions and thrown fetch errors fall back to local rules. There is no timeout/abort or structured-output validation. The board awaits roles sequentially; a hanging request can keep it busy. Local advice is keyword/rule-driven, **not an on-device LLM**. Responses are advisory text, not authorized tool calls: state-changing approval/build decisions remain in the reducer.
+## Geography / external services
 
-The board includes the latest CEO message in history and `askExec` appends it again. Digest/local advice contain some hardcoded facts and mismatched calculations; consult the risk register before changing prompts.
+Leaflet expects `[lat,lng]`, named centers `{lat,lng}`. GeoJSON conversion would require `[lng,lat]`. Claim boxes use small-angle approximations; independently selected centers can overlap. OSM raster tiles are visual, not ownership or routing data. `roadPath` creates five synthetic points; peers/sectors/sites are generated. Neither map nor visits enforce multiplayer permissions.
 
-## Multiplayer direction (not implemented)
+Both maps request `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`; Google Fonts load from layout links. Remote assets/API access may fail in a restricted sandbox. Preserve attribution and review https://operations.osmfoundation.org/policies/tiles/ before scaling. SQLite persistence does not eliminate these network requirements.
 
-Do not add a backend merely because this product is called multiplayer. A shared-world request first needs decisions on authority, identity, time progression, claim conflicts, transactions, persistence, and abuse limits. Server authority must eventually validate actions/ownership, not trust imported client state or AI text. `RemoteCeo`, `netMode` and generated peer plans are prototype data seams, not a network contract or access-control boundary.
+## Non-goals and deployment boundary
+
+No accounts, cross-device recovery, server-authoritative actions, shared land conflicts, real presence, offline simulation, distributed locks/rate limits or multi-instance hosting. Snapshot validation is integrity protection, not anti-cheat. Read README for persistent-volume, HTTPS, backup/restore and session limitations.
+
+## Revision log
+
+- v2.0 — 2026-11-16: Next App Router, server SQLite snapshots, session ownership, credential removal, save queue and recovery APIs.
+- v1.0 — 2026-11-16: original Vite/localStorage audit, superseded for infrastructure; gameplay source map retained.
