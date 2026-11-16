@@ -2,11 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { EXEC_META } from "../game/constants";
 import { askExec, stateDigest, SUGGESTIONS } from "../game/advisor";
 import type { AIConfig, ChatMessage, ExecRole } from "../game/types";
+import { loadAdvisorConfig } from "../lib/saveApi";
 import { useGame } from "../state/store";
 import { cn } from "../utils/cn";
 import { Btn, Chip, Icon, KV, Meter, Panel } from "./ui";
 
 const ROLES: ExecRole[] = ["cto", "cfo", "coo"];
+
+interface AdvisorConfigView {
+  configured: boolean;
+  model: string | null;
+}
 
 export default function Boardroom() {
   const { state, ui, setUi, dispatch, toast } = useGame();
@@ -15,7 +21,25 @@ export default function Boardroom() {
   const [busy, setBusy] = useState(false);
   const [showDigest, setShowDigest] = useState(false);
   const [configFor, setConfigFor] = useState<ExecRole | null>(null);
+  const [advisorConfig, setAdvisorConfig] = useState<AdvisorConfigView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let alive = true;
+    loadAdvisorConfig()
+      .then((config) => {
+        if (alive) setAdvisorConfig({ configured: config.configured, model: config.model });
+      })
+      .catch(() => {
+        if (alive) setAdvisorConfig({ configured: false, model: null });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const advisorConfigured = advisorConfig?.configured === true;
+
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -71,7 +95,7 @@ export default function Boardroom() {
 
         {state.execs.map((e) => {
           const m = EXEC_META[e.role];
-          const live = e.ai.enabled && !!e.ai.apiKey.trim();
+          const live = e.ai.enabled && advisorConfigured;
           return (
             <div
               key={e.role}
@@ -90,7 +114,13 @@ export default function Boardroom() {
                   <div className="eyebrow !text-[8.5px]">{m.title}</div>
                   <div className="num mt-0.5 flex flex-wrap items-center gap-1.5 text-[9px] text-dim">
                     <span style={{ color: m.color }}>{m.domain}</span>
-                    <Chip color={live ? m.color : "#647c84"}>{live ? e.ai.model : "LOCAL ADVISOR"}</Chip>
+                    <Chip color={live ? m.color : e.ai.enabled ? "#ff6a55" : "#647c84"}>
+                      {live
+                        ? (advisorConfig?.model ?? "SERVER ADVISOR")
+                        : e.ai.enabled
+                          ? "SERVER ADVISOR OFFLINE"
+                          : "LOCAL ADVISOR"}
+                    </Chip>
                   </div>
                 </div>
               </div>
@@ -104,13 +134,15 @@ export default function Boardroom() {
                   Address {e.role.toUpperCase()}
                 </Btn>
                 <Btn size="sm" variant="ghost" className="ml-auto" onClick={() => setConfigFor(configFor === e.role ? null : e.role)}>
-                  <Icon.gear size={12} /> Model
+                  <Icon.gear size={12} /> Advisor
                 </Btn>
               </div>
               {configFor === e.role && (
                 <ModelConfig
                   role={e.role}
                   ai={e.ai}
+                  configured={advisorConfigured}
+                  model={advisorConfig?.model ?? null}
                   onSave={(patch) => dispatch({ type: "setAI", role: e.role, patch })}
                   onTest={async (cfg) => {
                     setBusy(true);
@@ -123,7 +155,7 @@ export default function Boardroom() {
                       ] as ChatMessage[],
                     }));
                     setBusy(false);
-                    toast(res.source === "live-api" ? `${e.ai.model} responded.` : `Fell back to local advisor — ${res.error ?? "endpoint not enabled"}`, res.source === "live-api" ? "good" : "bad");
+                    toast(res.source === "live-api" ? `${advisorConfig?.model ?? "Server advisor"} responded.` : `Fell back to the local advisor — ${res.error ?? "server advisor not enabled"}`, res.source === "live-api" ? "good" : "bad");
                   }}
                 />
               )}
@@ -304,11 +336,15 @@ export default function Boardroom() {
 function ModelConfig({
   role,
   ai,
+  configured,
+  model,
   onSave,
   onTest,
 }: {
   role: ExecRole;
   ai: AIConfig;
+  configured: boolean;
+  model: string | null;
   onSave: (patch: Partial<AIConfig>) => void;
   onTest: (cfg: AIConfig) => void;
 }) {
@@ -318,39 +354,36 @@ function ModelConfig({
   return (
     <div className="rise mt-3 border-t border-line pt-2.5">
       <div className="eyebrow mb-1.5" style={{ color: m.color }}>
-        {role} model endpoint · OpenAI-compatible /chat/completions
+        {role} advisor routing · configured by the server operator
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="block">
-          <span className="num text-[9px] text-dim">BASE URL</span>
-          <input className="field mt-0.5" value={local.baseUrl} placeholder="https://api.openai.com/v1" onChange={(e) => setLocal({ ...local, baseUrl: e.target.value })} />
-        </label>
-        <div className="grid grid-cols-2 gap-1.5">
-          <label className="block">
-            <span className="num text-[9px] text-dim">MODEL</span>
-            <input className="field mt-0.5" value={local.model} placeholder="gpt-4o-mini" onChange={(e) => setLocal({ ...local, model: e.target.value })} />
-          </label>
-          <label className="block">
-            <span className="num text-[9px] text-dim">TEMPERATURE {local.temperature.toFixed(2)}</span>
-            <input type="range" min={0} max={1.4} step={0.05} value={local.temperature} onChange={(e) => setLocal({ ...local, temperature: Number(e.target.value) })} className="mt-2 w-full accent-[#35d6c0]" />
-          </label>
+        <div className="flex items-center justify-between gap-2 border border-line bg-ink-950/55 px-2 py-1.5">
+          <span className="num text-[9.5px] text-dim">PROVIDER</span>
+          <span className={cn("num text-[9.5px]", configured ? "text-teal" : "text-coral")}>
+            {configured ? `SERVER · ${model ?? "configured model"}` : "NOT CONFIGURED · LOCAL FALLBACK"}
+          </span>
         </div>
         <label className="block">
-          <span className="num text-[9px] text-dim">API KEY (stored locally in this browser only)</span>
-          <input className="field mt-0.5" type="password" value={local.apiKey} placeholder="sk-…" onChange={(e) => setLocal({ ...local, apiKey: e.target.value })} />
+          <span className="num text-[9px] text-dim">TEMPERATURE {local.temperature.toFixed(2)}</span>
+          <input type="range" min={0} max={1.4} step={0.05} value={local.temperature} onChange={(e) => setLocal({ ...local, temperature: Number(e.target.value) })} className="mt-2 w-full accent-[#35d6c0]" />
         </label>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={local.enabled} onChange={(e) => setLocal({ ...local, enabled: e.target.checked })} className="accent-[#35d6c0]" />
-          <span className="num text-[10px] text-mist">Route {role.toUpperCase()} to this endpoint</span>
+          <span className="num text-[10px] text-mist">Route {role.toUpperCase()} through the server advisor</span>
         </label>
         <div className="mt-1 flex gap-1.5">
           <Btn size="sm" variant="primary" onClick={() => onSave(local)}>
-            <Icon.check size={12} /> Save
+            <Icon.check size={12} /> Save preference
           </Btn>
-          <Btn size="sm" variant="teal" disabled={!local.enabled || !local.apiKey.trim()} onClick={() => onTest(local)}>
+          <Btn size="sm" variant="teal" disabled={!local.enabled || !configured} onClick={() => onTest(local)}>
             Test connection
           </Btn>
         </div>
+        <p className="num mt-1 border-l-2 border-signal/50 pl-2 text-[9px] leading-snug text-dim">
+          The provider URL, model and API key are server environment variables and are never sent to the
+          browser or written into the game save. If the proxy fails or times out, the grounded local advisor
+          answers instead.
+        </p>
         <div className="mt-1">
           <KV k="System prompt" v={`${m.system.length} chars · fixed`} />
           <KV k="Fallback" v="grounded local advisor" tone="#35d6c0" />

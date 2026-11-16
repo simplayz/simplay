@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
 
 @theme {
   --font-display: "Archivo", "Archivo Expanded", system-ui, sans-serif;
@@ -28,8 +27,7 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
 }
 

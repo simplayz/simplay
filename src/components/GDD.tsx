@@ -12,7 +12,7 @@ import {
 } from "../game/constants";
 import { flows, systemMods } from "../game/engine";
 import { PHASES } from "../game/types";
-import { useGame } from "../state/store";
+import { useGame, type PersistenceState } from "../state/store";
 import { cn } from "../utils/cn";
 import { Btn, Chip, Icon, KV, Panel } from "./ui";
 import { fmt } from "./Shell";
@@ -21,7 +21,7 @@ const TABS = ["Overview", "Numbers", "Catalogue", "Questions", "Changelog", "Sav
 type Tab = (typeof TABS)[number];
 
 export default function GDD() {
-  const { state, dispatch, toast, hardReset } = useGame();
+  const { state, toast, hardReset, importSave, exportSave, persistence } = useGame();
   const [tab, setTab] = useState<Tab>("Questions");
   const answered = state.questions.filter((q) => q.answer.trim()).length;
   const fileRef = useRef<HTMLInputElement>(null);
@@ -32,7 +32,7 @@ export default function GDD() {
         <div>
           <div className="eyebrow">Game design document · living artefact · schema {state.schema}</div>
           <h2 className="display text-[22px] leading-none text-chalk">
-            SIMPLAYZ <span className="text-signal">GDD</span> v0.4.0
+            SIMPLAYZ <span className="text-signal">GDD</span> v0.5.0
           </h2>
         </div>
         <div className="ml-auto flex flex-wrap gap-1">
@@ -65,28 +65,38 @@ export default function GDD() {
         {tab === "Save" && (
           <SaveTab
             fileRef={fileRef}
+            persistence={persistence}
             onExport={() => {
-              const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+              const json = exportSave();
+              if (!json) {
+                toast("Export refused — the current state did not pass validation.", "bad");
+                return;
+              }
+              const blob = new Blob([json], { type: "application/json" });
               const a = document.createElement("a");
               a.href = URL.createObjectURL(blob);
               a.download = `simplayz-${state.company.replace(/\s+/g, "-").toLowerCase()}-h${state.economy.tick}.json`;
               a.click();
               URL.revokeObjectURL(a.href);
-              toast("Save exported.", "good");
+              toast("Sanitized save exported. No advisor credentials are included.", "good");
             }}
             onImport={async (file: File) => {
               try {
-                const parsed = JSON.parse(await file.text());
-                if (parsed?.schema !== 4) throw new Error(`schema ${parsed?.schema} ≠ 4`);
-                dispatch({ type: "hydrate", state: parsed });
-                toast("Save imported and hydrated.", "good");
+                const parsed: unknown = JSON.parse(await file.text());
+                const result = importSave(parsed);
+                if (!result.ok) throw new Error(result.error);
+                toast("Save validated and hydrated — the server write is queued.", "good");
               } catch (e) {
                 toast(`Import refused — ${(e as Error).message}`, "bad");
               }
             }}
-            onReset={() => {
-              hardReset();
-              toast("Registry wiped. Back to the claim form.", "bad");
+            onReset={async () => {
+              try {
+                await hardReset();
+                toast("Server save and local legacy copy deleted. Back to the claim form.", "bad");
+              } catch (e) {
+                toast(`Reset failed — ${(e as Error).message}. Nothing was removed.`, "bad");
+              }
             }}
           />
         )}
@@ -453,38 +463,65 @@ function Changelog() {
 
 function SaveTab({
   fileRef,
+  persistence,
   onExport,
   onImport,
   onReset,
 }: {
   fileRef: React.MutableRefObject<HTMLInputElement | null>;
+  persistence: PersistenceState;
   onExport: () => void;
-  onImport: (f: File) => void;
-  onReset: () => void;
+  onImport: (f: File) => Promise<void>;
+  onReset: () => Promise<void>;
 }) {
   const { state } = useGame();
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmLegacy, setConfirmLegacy] = useState<"migrate" | "discard" | null>(null);
+  const [confirmServer, setConfirmServer] = useState<"reload" | "overwrite" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const status = persistence.status;
+  const legacy = persistence.legacy;
+
+  const phaseLabel: Record<string, string> = {
+    idle: "Ready — no write has been attempted in this tab",
+    dirty: "Unsaved — waiting for the next autosave window",
+    saving: "Saving — one write in flight",
+    saved: `Saved — server revision ${status.revision}`,
+    error: `Unsaved — ${status.error ?? "the save service is unavailable"}`,
+    conflict: `Conflict — server revision ${status.conflict?.currentRevision ?? "unknown"} is newer`,
+  };
+
   return (
-    <div className="mx-auto max-w-[760px]">
-      <div className="eyebrow">§3 Persistence</div>
-      <h3 className="display mt-1 text-[26px] leading-none text-chalk">SAVE &amp; STATE</h3>
-      <div className="panel mt-3 p-3">
-        <KV k="Schema" v={state.schema} />
-        <KV k="Storage key" v="simplayz.save.v4 (localStorage)" />
+    <div className="mx-auto flex max-w-[820px] flex-col gap-3">
+      <div>
+        <div className="eyebrow">§3 Persistence</div>
+        <h3 className="display mt-1 text-[26px] leading-none text-chalk">SAVE &amp; STATE</h3>
+      </div>
+
+      <div className="panel p-3">
+        <div className="eyebrow">Durable anonymous save</div>
+        <KV k="Game schema" v={state.schema} />
+        <KV k="Server revision" v={status.revision} />
+        <KV k="Save state" v={phaseLabel[status.phase]} tone={status.phase === "error" || status.phase === "conflict" ? "#ff6a55" : status.phase === "saved" ? "#35d6c0" : undefined} />
+        <KV k="Last confirmed write" v={status.lastSavedAt ? new Date(status.lastSavedAt).toLocaleString() : "none in this tab"} />
+        <KV k="Storage" v="SQLite on the server · anonymous HttpOnly session cookie" />
         <KV k="CEO / company" v={`${state.ceoName} · ${state.company}`} />
-        <KV k="Claim centre" v={`${state.claim!.center.lat.toFixed(4)}, ${state.claim!.center.lng.toFixed(4)} (${state.claim!.placedBy})`} />
+        <KV k="Claim centre" v={state.claim ? `${state.claim.center.lat.toFixed(4)}, ${state.claim.center.lng.toFixed(4)} (${state.claim.placedBy})` : "not registered"} />
         <KV k="Sim hour" v={`${state.economy.tick} (day ${(state.economy.tick / 24).toFixed(1)})`} />
         <KV k="Buildings / projects" v={`${state.buildings.length} / ${state.projects.length}`} />
         <KV k="Log entries retained" v={`${state.log.length} of ${TUNABLES.maxLog.v}`} />
         <div className="mt-3 flex flex-wrap gap-2">
           <Btn variant="primary" onClick={onExport}>
-            <Icon.arrow size={13} /> Export save JSON
+            <Icon.arrow size={13} /> Export sanitized save JSON
           </Btn>
           <Btn variant="teal" onClick={() => fileRef.current?.click()}>
             Import save JSON
           </Btn>
-          <Btn variant="danger" onClick={onReset}>
-            <Icon.close size={13} /> Wipe registry &amp; re-register
-          </Btn>
+          {status.phase === "error" && (
+            <Btn variant="primary" onClick={persistence.retrySave}>
+              Retry save now
+            </Btn>
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -492,16 +529,217 @@ function SaveTab({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onImport(f);
+              if (f) void onImport(f);
               e.target.value = "";
             }}
           />
         </div>
         <p className="num mt-3 border-l-2 border-signal/60 pl-2 text-[10px] leading-snug text-dim">
-          Client-side persistence is a prototype decision, not an architecture. The moment Q2 is answered, the
-          reducer stays and the storage adapter swaps — the tick function is already pure, so a server can run
-          the identical simulation authoritatively.
+          Exports are validated and stripped of credential-shaped fields. The game schema remains v4. The
+          anonymous session has no account recovery: the HttpOnly cookie identifies this browser&apos;s save.
         </p>
+      </div>
+
+      {(status.phase === "conflict" || status.phase === "error") && (
+        <div className="panel border-coral/45 p-3">
+          <div className="eyebrow !text-coral">Recovery</div>
+          <p className="mt-1 text-[11.5px] leading-snug text-mist">
+            {status.phase === "conflict"
+              ? "Autosave is paused because the server has a newer revision. Pick one copy explicitly; nothing is overwritten by default."
+              : "The latest snapshot is retained in memory. Retry is automatic while the tab remains open, or trigger it now."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {status.phase === "error" && (
+              <Btn size="sm" variant="primary" onClick={persistence.retrySave}>
+                Retry save
+              </Btn>
+            )}
+            {status.phase === "conflict" && (
+              <>
+                {confirmServer === null && (
+                  <>
+                    <Btn size="sm" variant="teal" onClick={() => setConfirmServer("reload")}>
+                      Load server revision {status.conflict?.currentRevision}
+                    </Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => setConfirmServer("overwrite")}>
+                      Keep this browser&apos;s version
+                    </Btn>
+                  </>
+                )}
+                {confirmServer === "reload" && (
+                  <>
+                    <span className="num self-center text-[10px] text-coral">
+                      Discard unsaved browser changes and load the server copy?
+                    </span>
+                    <Btn
+                      size="sm"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        await persistence.reloadServer();
+                        setBusy(false);
+                        setConfirmServer(null);
+                      }}
+                    >
+                      Confirm load
+                    </Btn>
+                    <Btn size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmServer(null)}>
+                      Cancel
+                    </Btn>
+                  </>
+                )}
+                {confirmServer === "overwrite" && (
+                  <>
+                    <span className="num self-center text-[10px] text-coral">
+                      Replace server revision {status.conflict?.currentRevision} with this tab&apos;s game?
+                    </span>
+                    <Btn
+                      size="sm"
+                      variant="danger"
+                      onClick={() => {
+                        persistence.overwriteServer();
+                        setConfirmServer(null);
+                      }}
+                    >
+                      Confirm replace
+                    </Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => setConfirmServer(null)}>
+                      Cancel
+                    </Btn>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {legacy.status !== "none" && (
+        <div className="panel p-3">
+          <div className="eyebrow">Legacy browser save · simplayz.save.v4</div>
+          {legacy.status === "available" ? (
+            <>
+              <p className="mt-1 text-[11.5px] leading-snug text-mist">
+                A validated legacy copy remains in this browser. Migration is not automatic. It is uploaded
+                without old advisor credentials and the local copy is removed only after the server confirms
+                the write{status.revision > 0 ? ". This will replace the next server revision with the legacy state." : "."}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {confirmLegacy === null && (
+                  <>
+                    <Btn size="sm" variant="teal" onClick={() => setConfirmLegacy("migrate")}>
+                      Migrate this copy
+                    </Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => setConfirmLegacy("discard")}>
+                      Discard local copy
+                    </Btn>
+                  </>
+                )}
+                {confirmLegacy === "migrate" && (
+                  <>
+                    <Btn
+                      size="sm"
+                      variant="danger"
+                      onClick={() => {
+                        persistence.migrateLegacy();
+                        setConfirmLegacy(null);
+                      }}
+                    >
+                      Confirm migration
+                    </Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => setConfirmLegacy(null)}>
+                      Cancel
+                    </Btn>
+                  </>
+                )}
+                {confirmLegacy === "discard" && (
+                  <>
+                    <span className="num self-center text-[10px] text-coral">Remove the local legacy copy permanently?</span>
+                    <Btn
+                      size="sm"
+                      variant="danger"
+                      onClick={() => {
+                        persistence.discardLegacy();
+                        setConfirmLegacy(null);
+                      }}
+                    >
+                      Confirm discard
+                    </Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => setConfirmLegacy(null)}>
+                      Cancel
+                    </Btn>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-[11.5px] leading-snug text-coral">{legacy.error}</p>
+              {confirmLegacy === "discard" ? (
+                <div className="mt-2 flex gap-2">
+                  <Btn
+                    size="sm"
+                    variant="danger"
+                    onClick={() => {
+                      persistence.discardLegacy();
+                      setConfirmLegacy(null);
+                    }}
+                  >
+                    Confirm discard
+                  </Btn>
+                  <Btn size="sm" variant="ghost" onClick={() => setConfirmLegacy(null)}>
+                    Cancel
+                  </Btn>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <Btn size="sm" variant="ghost" onClick={() => setConfirmLegacy("discard")}>
+                    Discard invalid local copy
+                  </Btn>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="panel border-coral/35 p-3">
+        <div className="eyebrow !text-coral">Destructive actions</div>
+        <p className="mt-1 text-[11.5px] leading-snug text-mist">
+          Reset deletes the SQLite save row attached to this anonymous session and any legacy localStorage
+          copy, then returns to the claim form. The session cookie itself is retained; the next registered
+          game starts at revision 1. There is no account-level restore. Export first if you want a backup.
+        </p>
+        {!confirmReset ? (
+          <div className="mt-2">
+            <Btn variant="danger" onClick={() => setConfirmReset(true)}>
+              <Icon.close size={13} /> Wipe server save &amp; re-register
+            </Btn>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap items-center gap-2 border border-coral/40 bg-coral/6 p-2">
+            <span className="num text-[10px] text-coral">
+              Delete server revision {status.revision} and the local legacy copy? This cannot be undone.
+            </span>
+            <Btn
+              size="sm"
+              variant="danger"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                await onReset();
+                setBusy(false);
+                setConfirmReset(false);
+              }}
+            >
+              {busy ? "Resetting…" : "Confirm reset"}
+            </Btn>
+            <Btn size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmReset(false)}>
+              Cancel
+            </Btn>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -41,9 +41,6 @@ import type {
  * ------------------------------------------------------------------ */
 
 const DEFAULT_AI: AIConfig = {
-  baseUrl: "https://api.openai.com/v1",
-  apiKey: "",
-  model: "gpt-4o-mini",
   temperature: 0.6,
   enabled: false,
 };
@@ -279,12 +276,12 @@ export function createGame(
     log: [
       { tick: 0, kind: "diplo", text: `Claim registered — ${sideKm}×${sideKm} km (${sideKm * sideKm} km²) at ${formatLL(center)}. Title issued by the Simplayz Land Registry.` },
       { tick: 0, kind: "diplo", text: `Two alliance partners auto-provisioned within 7 km: ${bots.map((b) => b.name).join(", ")}. Service roads surveyed.` },
-      { tick: 0, kind: "exec", text: "Executive board online: CTO ATLAS, CFO LEDGER, COO RELAY. Configure their model endpoints in the Boardroom." },
+      { tick: 0, kind: "exec", text: "Executive board online: CTO ATLAS, CFO LEDGER, COO RELAY. Advisor routing is configured by the server operator; the grounded local advisors are always available." },
     ],
     speed: 1,
     netMode: "local-sim",
     questions: OPEN_QUESTIONS.map((q) => ({ ...q })),
-    changelogSeen: "0.4.0",
+    changelogSeen: "0.5.0",
   };
 }
 

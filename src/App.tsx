@@ -3,7 +3,7 @@ import Boardroom from "./components/Boardroom";
 import Diplomacy from "./components/Diplomacy";
 import GDD from "./components/GDD";
 import Onboarding from "./components/Onboarding";
-import { NavRail, OpsTicker, Toast, TopBar } from "./components/Shell";
+import { BootScreen, NavRail, OpsTicker, SaveBanner, Toast, TopBar } from "./components/Shell";
 import Studio from "./components/Studio";
 import Territory from "./components/Territory";
 import WorldMap from "./components/WorldMap";
@@ -12,7 +12,7 @@ import { SCREENS } from "./game/engine";
 import { GameProvider, useGame } from "./state/store";
 
 function Console() {
-  const { ui, setUi } = useGame();
+  const { ui, setUi, persistence } = useGame();
 
   // Keyboard: 1–6 jump screens (ignored while typing or while the mouse is locked)
   useEffect(() => {
@@ -27,6 +27,15 @@ function Console() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setUi]);
 
+  if (persistence.boot !== "ready") {
+    return (
+      <div className="relative h-full w-full">
+        <TopoBackdrop />
+        <BootScreen />
+      </div>
+    );
+  }
+
   if (!ui.booted)
     return (
       <div className="relative h-full w-full">
@@ -39,6 +48,7 @@ function Console() {
     <div className="relative flex h-full w-full flex-col overflow-hidden">
       <TopoBackdrop />
       <TopBar />
+      <SaveBanner />
       <div className="relative z-10 flex min-h-0 flex-1">
         <NavRail />
         <main className="relative min-w-0 flex-1 overflow-hidden">

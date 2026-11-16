@@ -138,10 +138,11 @@ export interface Project {
   draft?: FloorPlan | null;
 }
 
+/**
+ * Non-secret advisor preference. The provider endpoint, credentials and model
+ * are operator configuration on the server; they are never part of GameState.
+ */
 export interface AIConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
   temperature: number;
   enabled: boolean;
 }

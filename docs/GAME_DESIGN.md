@@ -1,6 +1,6 @@
-# Systems reference — v1.0
+# Systems reference — v1.1
 
-2026-11-16; observed baseline `294a75c`. This is an implementation-oriented design map, not a new balance pass. Numeric sources: `constants.ts` and `engine.ts`; known contradictions: [decision register](DECISIONS.md). Existing in-app § references describe its own GDD, not section numbers in this document.
+2026-11-16; observed baseline after the Next.js/SQLite migration. This is an implementation-oriented design map, not a new balance pass. Numeric sources: `constants.ts` and `engine.ts`; persistence: `store.tsx`, `lib/autosave.ts`, `server/saveApi.ts`; known contradictions: [decision register](DECISIONS.md). Existing in-app § references describe its own GDD, not section numbers in this document.
 
 ## Motivation and loops
 
@@ -21,8 +21,9 @@ Target feeling is informed control, not surprise bankruptcy. Meaningful decision
 | Resource operation | Make resilience matter; choose production vs capacity | Operational buildings → power/food/materials, upkeep/revenue, crew/storage; `flows` + hourly tick | Brownout halves production efficiency; empty food/overcapacity lower morale. Trade/build/maintenance are recovery levers; storage stocks can spoil. |
 | Condition/maintenance | Keep old assets relevant; choose repair timing | Hourly condition decay 0.08; below 40 condition multiplier 0.6. `maintain` costs round((100−condition)×45), restores 100 | Insufficient credits rejected. At exactly 40 penalty is not yet active. Current multiplier affects power demand as well as output. |
 | Trade/roads | Give surplus an outlet; choose timing/partner/infrastructure | Buy/sell food/materials against bot inventory/purse; price depends on market/relation/modifiers; grade upgrades affect capacity | Per-bot cooldown 6 sim-hours; quantity capped by `tradeCapacity`; insufficient stock/cash refuses. Power/credits trades rejected. Roads/partners are simulated, not real player contracts. |
-| Executive board/stance | Explain bottlenecks and schedule tradeoffs; choose whose advice to follow | Chat/digest → advisory text; stance modifies phase speed/design quality | Disabled/no-key → local rules; endpoint errors → local fallback. No timeout. Text never directly executes actions. Local facts/prompt grounding need regression checks. |
-| Speed/persistence | Let players control waiting; choose pace | 0/1/4/16× → timer cadence, local state and debounced saves | No offline progress/server clock; browser throttling and fast-tick save starvation. JSON reset is destructive; export contains keys. |
+| Executive board/stance | Explain bottlenecks and schedule tradeoffs; choose whose advice to follow | Chat/digest → advisory text; stance modifies phase speed/design quality | Disabled/config missing → local rules. Live requests go through the server proxy with a timeout/rate limit; provider errors fall back locally. Text never directly executes actions. The client currently includes the new CEO turn in history and also appends it as the prompt, a known duplication (R6). |
+| Speed/persistence | Let players control waiting; choose pace | 0/1/4/16× → timer cadence; validated server save with revision | No offline progress/server clock. Autosave is serialized and coalesced, with a write attempted at least every 5 s while dirty; `pagehide` is best effort. Stale writes return a conflict and pause autosave until the player chooses a copy. |
+| Anonymous session/ownership | Make progress durable without asking for an account; understand the recovery limit | HttpOnly cookie → hashed session row → one game save | Clearing cookies/browser data loses access; no account recovery. Export/import is the manual backup. The cookie is a bearer credential, not a shared-world identity. |
 | Progression/visits | Make expansion and neighboring activity visible | XP → CEO level/tier access; generated remote plans → visits | Neighbors/presence/security affordances are local simulation, not authorization. Read-only visit UI is not a multiplayer permission system. |
 
 ## Balance levers and rationale
@@ -43,6 +44,15 @@ Do not copy the full archetype table here; edit `ARCHETYPES` with its `rationale
 | Market | base materials 34, food 22, power 9; reversion 0.06/h; impact 0.00035/unit; band ±28% | Moving prices create timing decisions without indefinite divergence. Power has a price field but is not tradable. |
 | Progression | `LEVELS(l) = round(600 × 1.55^(l−1))` | Increasing level thresholds. Verify caller semantics rather than assuming “600 to level 2” from prose. |
 
+## Save and session contract
+
+- **Schema:** `simplayz.save.v4`, `schema: 4`; database schema version `1`. Numeric bounds and entity references are validated on server read/write, boot, import, and legacy migration. Credential-shaped fields are stripped before validation. Negative credits are valid debt.
+- **Actor:** an opaque anonymous session cookie, hashed in SQLite. The client cannot choose a save ID or claim another session's row. Reset deletes only the matching session's row and keeps the cookie.
+- **Autosave:** UI states are `idle`, `dirty`, `saving`, `saved`, `error`, and `conflict`. At most one write is in flight. Simulation ticks replace a pending snapshot; player actions request a short prompt delay. While dirty, the next attempt starts no later than five seconds after the previous attempt, preventing accelerated ticks from starving saves.
+- **Failure/recovery:** a failed write leaves the game in memory, keeps the snapshot, shows unsaved status, and retries automatically while play continues. A `409` conflict retains the browser snapshot and pauses autosave; the player explicitly loads the server copy (discarding local changes) or replaces the server copy. `pagehide` attempts a keepalive write but is not guaranteed.
+- **No progress destruction on boot:** initial loading gates the simulation and onboarding. A failed load or invalid server save does not substitute a fresh default state. Legacy localStorage is sanitized immediately but removed only after an explicit migration writes successfully.
+- **Acceptance examples:** fresh profile registers → revision 1 → reload restores; two tabs at the same revision → second write conflicts; save service down → game remains playable/unsaved → retry succeeds; old key-bearing save → exported/uploaded copy has no credentials → local copy remains until success.
+
 ## Required spec for a mechanic change
 
 Record: version/date → player problem and target feeling → decision → purpose → input/action/schema → outputs/state transitions → formulas with units and rationale → bounds/rounding → invalid inputs → failure/recovery → feedback/UI → save/network/security effects → happy/edge/failure cases → measurement plan. This is a specification checklist, not an extra runtime prompt.
@@ -52,3 +62,4 @@ Balance proposals must compare a reproducible starting state and controlled time
 ## Revision log
 
 - v1.0 — 2026-11-16: current-system inventory and balance provenance; no tuning changed.
+- v1.1 — 2026-11-16: documented the anonymous server save/session contract, serialized autosave, conflict recovery, and advisor proxy; no gameplay or economy number changed.

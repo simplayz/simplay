@@ -167,16 +167,16 @@ export default function Diplomacy() {
 
         <Panel title="Netcode status" accent="#ff6a55" bodyClass="p-3">
           <KV k="Mode" v={state.netMode === "local-sim" ? "LOCAL SIMULATION" : "LIVE"} tone={state.netMode === "local-sim" ? "#f2a33c" : "#35d6c0"} />
-          <KV k="Authority" v="client-side reducer" />
-          <KV k="Persistence" v="localStorage (schema 4)" />
+          <KV k="Authority" v="client tick · server-owned save revision" />
+          <KV k="Persistence" v="SQLite · anonymous session · schema 4" />
           <KV k="Peer agents" v={`${state.remote.length} simulated CEOs`} />
           <KV k="Grid" v={`${f.produced}/${f.demanded} kW`} tone={f.brownout ? "#ff6a55" : "#35d6c0"} />
           <p className="mt-2 border-l-2 border-coral/60 pl-2 text-[10px] leading-snug text-mist">
-            Multiplayer is stubbed behind a single seam: remote CEOs are deterministic agents driven by the
-            same tick, and their published floor plans are read-only walk-throughs. Swapping to a live
-            authoritative server (Colyseus / Supabase Realtime / Liveblocks) means replacing the tick source
-            and the `remote` array — no gameplay code changes. That substitution is open question{" "}
-            <b className="text-coral">Q2/Q3</b> in the design doc and needs your ruling.
+            Multiplayer is still stubbed: remote CEOs are deterministic agents driven by the same tick, and
+            their published floor plans are read-only walk-throughs. Saves are durable per anonymous browser
+            session, but the simulation loop has no shared authority yet. A live server (Colyseus / Supabase
+            Realtime / Liveblocks) still means replacing the tick source and the `remote` array. That
+            substitution is open question <b className="text-coral">Q3</b> in the design doc.
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Stat label="Visits logged" value={state.log.filter((l) => l.kind === "visit").length} />

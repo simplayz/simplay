@@ -89,8 +89,11 @@ export default function WorldMap() {
     L.control.zoom({ position: "bottomleft" }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
-    window.setTimeout(() => map.invalidateSize(), 120);
+    const resizeTimer = window.setTimeout(() => {
+      if (map.getContainer().isConnected) map.invalidateSize();
+    }, 120);
     return () => {
+      window.clearTimeout(resizeTimer);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;

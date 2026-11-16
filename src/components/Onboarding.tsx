@@ -11,7 +11,7 @@ import { Btn, Icon } from "./ui";
  * is understood visually before the player commits to it.
  */
 export default function Onboarding() {
-  const { newGame, loadDemo, toast } = useGame();
+  const { newGame, loadDemo, toast, persistence } = useGame();
   const hostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const boxRef = useRef<L.Polygon | null>(null);
@@ -120,7 +120,8 @@ export default function Onboarding() {
         <p className="mt-3 max-w-[430px] text-[13px] leading-relaxed text-mist">
           One claim per CEO, anchored to where you actually are. Inside it you get four resource
           sectors, twenty building sites, two auto-provisioned alliance trading partners wired to you
-          by road, and an executive board of three bots — each running on its own AI model.
+          by road, and an executive board of three bots. Live advisor routing is configured by the
+          server operator; a grounded local advisor is always available.
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-3">
@@ -196,7 +197,7 @@ export default function Onboarding() {
             {[
               ["2 alliance bots", "a supplier and an offtaker placed within 7 km, each with their own purse, inventory and relation score"],
               ["connecting roads", "surveyed polylines from your claim centre to both partners, upgradable gravel → asphalt → arterial"],
-              ["3 executive bots", "CTO ATLAS, CFO LEDGER, COO RELAY — each with a configurable model endpoint and their own SDLC lane"],
+              ["3 executive bots", "CTO ATLAS, CFO LEDGER, COO RELAY — each with server-managed advisor routing and a grounded local fallback, plus their own SDLC lane"],
               ["2 site bots per building", "security and reception, provisioned at Deploy and walkable in first person"],
             ].map(([t, d]) => (
               <li key={t} className="flex gap-2 text-[11.5px] leading-snug text-mist">
@@ -208,6 +209,38 @@ export default function Onboarding() {
             ))}
           </ul>
         </div>
+
+        {persistence.legacy.status !== "none" && (
+          <div className="mt-4 border border-signal/45 bg-ink-900/75 p-3">
+            <div className="eyebrow !text-signal">Legacy browser save found</div>
+            {persistence.legacy.status === "available" ? (
+              <>
+                <p className="mt-1 text-[11.5px] leading-snug text-mist">
+                  This browser still has a validated <span className="num">simplayz.save.v4</span> copy.
+                  Importing it will create a server save for this anonymous session. The local copy stays
+                  until the server confirms the write.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <Btn size="sm" variant="teal" onClick={persistence.migrateLegacy}>
+                    <Icon.arrow size={12} /> Migrate legacy save
+                  </Btn>
+                  <Btn size="sm" variant="ghost" onClick={persistence.discardLegacy}>
+                    Discard local copy
+                  </Btn>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-[11.5px] leading-snug text-coral">{persistence.legacy.error}</p>
+                <div className="mt-2">
+                  <Btn size="sm" variant="ghost" onClick={persistence.discardLegacy}>
+                    <Icon.close size={12} /> Discard invalid local copy
+                  </Btn>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="mt-auto flex flex-col gap-2 pt-6">
           <Btn

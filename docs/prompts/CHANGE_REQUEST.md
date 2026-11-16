@@ -1,4 +1,4 @@
-# Arena change-request prompt — v1
+# Arena change-request prompt — v1.1
 
 2026-11-16. This is a reusable instruction prompt, not a runtime executive prompt. Fill bracketed fields, remove inapplicable fields, and paste the block into Arena. It assumes the agent can inspect this repository; if it cannot, provide the referenced source excerpts instead of asking it to guess.
 
@@ -10,13 +10,13 @@ The agent's final response has four headings: **Implemented**, **Validation**, *
 
 1. Explicit acceptance criteria pass or are reported blocked; no invented backend, service, test result or live multiplayer claim.
 2. Smallest coherent diff on current branch; no unrelated upgrades or refactors.
-3. Relevant typecheck/build and happy/edge/failure checks reported accurately; save compatibility and secret handling addressed where touched.
+3. Relevant typecheck/test/build and happy/edge/failure checks reported accurately; save compatibility, database migration, session/CSRF, and secret handling addressed where touched.
 4. Any new/changed prompt has its own version, output format, criteria and three tests. Model behavior claims require actual production-model evaluation evidence.
 
 ## Copyable prompt
 
 ```text
-Simplayz change request — template v1
+Simplayz change request — template v1.1
 
 Read AGENTS.md and README.md, then only the relevant architecture/design/testing
 sections and source files. Inspect the current diff before editing. Work on the
@@ -50,10 +50,12 @@ Give every changed cost/reward/duration/cooldown a rationale. Keep docs and in-a
 reference aligned where touched, version significant design/prompt changes and
 update CHANGELOG.md. Do not fix unrelated known gaps silently.
 
-Run npx tsc --noEmit and npm run build. There is no existing test/lint script;
-report manual checks honestly and add focused tests if permitted by scope.
-Never share raw saves or keys. If model evaluation is unavailable, report NOT RUN;
-do not claim prompt reliability from a mock or a build.
+Run npm run typecheck, npm test, and npm run build. For persistence changes also
+exercise a disposable SQLite path, revision conflicts, and error recovery. There
+is no lint script or CI workflow; report manual/browser checks honestly, and never
+call a manual scenario an automated test. Never share raw saves or keys. If model
+evaluation is unavailable, report NOT RUN; do not claim prompt reliability from a
+mock or a build.
 
 Final response headings: Implemented; Validation; Assumptions / risks; Next step.
 Name changed paths, user-visible behavior, actual PASS/FAIL/NOT RUN checks and
@@ -75,3 +77,4 @@ For executive-prompt changes, independently test at least: (1) provided digest w
 ## Changelog
 
 - v1 — 2026-11-16: initial output contract, scoped implementation prompt and three evaluation fixtures; no live model testing performed.
+- v1.1 — 2026-11-16: updated compatibility/validation instructions for the Next.js/SQLite stack (`npm test`, disposable DB, conflict/error recovery). Evaluation fixtures remain NOT RUN against a production model.

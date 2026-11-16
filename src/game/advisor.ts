@@ -4,9 +4,10 @@ import type { AIConfig, ChatMessage, ExecRole, GameState } from "./types";
 
 /**
  * GDD §7 — Executive board intelligence.
- * Each exec runs on its own configurable model endpoint. When no endpoint is
- * configured (or it errors) the advisor falls back to a deterministic,
- * state-grounded local model so the boardroom is never a dead screen.
+ * The server operator may configure one OpenAI-compatible model; roles share
+ * that routing. When it is not configured (or it errors) the advisor falls back
+ * to a deterministic, state-grounded local model so the boardroom is never a
+ * dead screen.
  */
 
 export function stateDigest(s: GameState): string {
@@ -146,6 +147,37 @@ export function localAdvice(role: ExecRole, msg: string, s: GameState): string {
 
 const TRADESLOPE = "0.35";
 
+export interface AdvisorTurn {
+  role: ExecRole | "ceo";
+  author: string;
+  text: string;
+}
+
+export function buildAdvisorMessages(
+  role: ExecRole,
+  company: string,
+  digest: string,
+  history: AdvisorTurn[],
+  prompt: string,
+): { role: "system" | "user" | "assistant"; content: string }[] {
+  const meta = EXEC_META[role];
+  return [
+    {
+      role: "system",
+      content: `${meta.system}\n\nYou are ${meta.name}, ${meta.title} of ${company}. Address the CEO directly. Be specific and quantitative.\n\n${digest}`,
+    },
+    ...history.slice(-8).map((m) => ({
+      role: (m.role === "ceo" ? "user" : "assistant") as "user" | "assistant",
+      content: m.author ? `[${m.author}] ${m.text}` : m.text,
+    })),
+    { role: "user", content: prompt },
+  ];
+}
+
+/**
+ * Calls the server-side advisor proxy. The browser never receives a provider
+ * URL or key; failures fall back to the grounded local advisor.
+ */
 export async function askExec(
   role: ExecRole,
   history: ChatMessage[],
@@ -153,32 +185,33 @@ export async function askExec(
   s: GameState,
   ai: AIConfig,
 ): Promise<{ text: string; source: "live-api" | "local-model"; error?: string }> {
-  if (!ai.enabled || !ai.apiKey.trim()) {
+  if (!ai.enabled) {
     await new Promise((r) => setTimeout(r, 420 + Math.random() * 500));
     return { text: localAdvice(role, prompt, s), source: "local-model" };
   }
-  const meta = EXEC_META[role];
   const body = {
-    model: ai.model,
+    role,
+    company: s.company,
+    prompt,
+    digest: stateDigest(s),
     temperature: ai.temperature,
-    messages: [
-      { role: "system", content: `${meta.system}\n\nYou are ${meta.name}, ${meta.title} of ${s.company}. Address the CEO directly. Be specific and quantitative.\n\n${stateDigest(s)}` },
-      ...history.slice(-8).map((m) => ({
-        role: m.role === "ceo" ? "user" : "assistant",
-        content: m.author ? `[${m.author}] ${m.text}` : m.text,
-      })),
-      { role: "user", content: prompt },
-    ],
+    history: history.slice(-8).map((m) => ({ role: m.role, author: m.author, text: m.text })),
   };
   try {
-    const res = await fetch(`${ai.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const res = await fetch("/api/advisor", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ai.apiKey}` },
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Simplayz-Request": "1" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const json = await res.json();
-    const text = json?.choices?.[0]?.message?.content?.trim();
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const message =
+        typeof json?.error?.message === "string" ? json.error.message : `${res.status} ${res.statusText}`;
+      throw new Error(message);
+    }
+    const text = typeof json?.text === "string" ? json.text.trim() : "";
     if (!text) throw new Error("Empty completion");
     return { text, source: "live-api" };
   } catch (err) {
@@ -186,7 +219,7 @@ export async function askExec(
     return {
       text: localAdvice(role, prompt, s),
       source: "local-model",
-      error: `Endpoint unreachable (${(err as Error).message}) — fell back to the grounded local advisor.`,
+      error: `Live advisor unavailable (${(err as Error).message}) — fell back to the grounded local advisor.`,
     };
   }
 }

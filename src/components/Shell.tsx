@@ -3,9 +3,10 @@ import { AREA_META, LEVELS } from "../game/constants";
 import { SCREENS, flows } from "../game/engine";
 import { formatLL } from "../game/geo";
 import type { Screen } from "../game/types";
+import type { AutosavePhase } from "../lib/autosave";
 import { useGame } from "../state/store";
 import { cn } from "../utils/cn";
-import { Chip, Icon, Meter } from "./ui";
+import { Btn, Chip, Icon, Meter } from "./ui";
 
 export const fmt = (n: number, d = 0) =>
   n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -294,7 +295,168 @@ export function OpsTicker() {
         {state.netMode === "local-sim" ? "NET: LOCAL-SIM" : "NET: LIVE"} · {state.buildings.length} assets ·{" "}
         {state.projects.filter((p) => p.phase !== "operate").length} in flight
       </span>
+      <SavePill />
     </footer>
+  );
+}
+
+/* ------------------------------- boot gate -------------------------------- */
+
+export function BootScreen() {
+  const { persistence } = useGame();
+  const failed = persistence.boot === "error";
+
+  return (
+    <div className="relative z-10 flex h-full min-h-screen w-full items-center justify-center p-6">
+      <div className="panel w-full max-w-[560px] p-5">
+        <div className="eyebrow">Simplayz · anonymous save service</div>
+        <h1 className="display mt-1.5 text-[26px] leading-none text-chalk">
+          {failed ? "SAVE SERVICE UNAVAILABLE" : "OPENING YOUR OPERATIONS CONSOLE"}
+        </h1>
+        {failed ? (
+          <>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
+              {persistence.bootError ?? "The save service could not be reached."}
+            </p>
+            <p className="num mt-2 border-l-2 border-coral/60 pl-2 text-[10px] leading-snug text-dim">
+              Nothing has been overwritten. Retry before starting or importing a save.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Btn variant="primary" onClick={persistence.retryBoot}>
+                <Icon.arrow size={13} /> Retry connection
+              </Btn>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-mist">
+              Loading the durable save attached to this browser&apos;s anonymous session.
+            </p>
+            <div className="mt-4 h-[3px] w-full overflow-hidden bg-ink-950">
+              <div className="h-full w-1/3 bg-signal blink" />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- save recovery ------------------------------ */
+
+export function SaveBanner() {
+  const { persistence } = useGame();
+  const [confirm, setConfirm] = React.useState<"reload" | "overwrite" | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const status = persistence.status;
+
+  if (persistence.boot !== "ready") return null;
+  if (status.phase !== "conflict" && status.phase !== "error") return null;
+
+  const conflict = status.phase === "conflict" ? status.conflict : undefined;
+
+  return (
+    <div className="relative z-20 shrink-0 border-b border-coral/45 bg-coral/8 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="num border border-coral/55 bg-ink-950/60 px-2 py-[2px] text-[9px] uppercase tracking-[0.16em] text-coral">
+          {conflict ? "save conflict" : "unsaved"}
+        </span>
+        <span className="min-w-0 flex-1 text-[11.5px] leading-snug text-mist">
+          {conflict
+            ? `A newer server revision (r${conflict.currentRevision}) exists. Autosave is paused; this browser's game is still in memory.`
+            : `Save failed — ${status.error ?? "the service is unavailable"}. Your game is still in memory and will keep retrying.`}
+        </span>
+        {!conflict && (
+          <button
+            onClick={persistence.retrySave}
+            className="num border border-line bg-ink-850 px-2 py-1 text-[10px] text-chalk transition-colors hover:border-signal hover:text-signal"
+          >
+            Retry save now
+          </button>
+        )}
+        {conflict && confirm === null && (
+          <>
+            <button
+              onClick={() => setConfirm("reload")}
+              className="num border border-line bg-ink-850 px-2 py-1 text-[10px] text-mist transition-colors hover:border-sky2 hover:text-sky2"
+            >
+              Load server version
+            </button>
+            <button
+              onClick={() => setConfirm("overwrite")}
+              className="num border border-line bg-ink-850 px-2 py-1 text-[10px] text-mist transition-colors hover:border-signal hover:text-signal"
+            >
+              Keep this version
+            </button>
+          </>
+        )}
+        {conflict && confirm !== null && (
+          <>
+            <span className="num text-[10px] text-chalk">
+              {confirm === "reload"
+                ? `Discard this browser's unsaved changes and load server revision r${conflict.currentRevision}?`
+                : `Replace server revision r${conflict.currentRevision} with this browser's game?`}
+            </span>
+            <button
+              disabled={busy}
+              onClick={async () => {
+                if (confirm === "reload") {
+                  setBusy(true);
+                  try {
+                    await persistence.reloadServer();
+                  } finally {
+                    setBusy(false);
+                    setConfirm(null);
+                  }
+                } else {
+                  persistence.overwriteServer();
+                  setConfirm(null);
+                }
+              }}
+              className="num border border-coral/60 bg-coral/15 px-2 py-1 text-[10px] text-coral transition-colors hover:bg-coral/25 disabled:opacity-50"
+            >
+              {busy ? "Working…" : "Confirm"}
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => setConfirm(null)}
+              className="num border border-line px-2 py-1 text-[10px] text-mist hover:text-chalk disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ save status ------------------------------- */
+
+function SavePill() {
+  const { persistence } = useGame();
+  const s = persistence.status;
+  const meta: Record<AutosavePhase, { text: string; color: string; blink?: boolean }> = {
+    idle: { text: "SAVE READY", color: "#647c84" },
+    dirty: { text: "UNSAVED", color: "#f2a33c" },
+    saving: { text: "SAVING…", color: "#35d6c0", blink: true },
+    saved: { text: `SAVED r${s.revision}`, color: "#35d6c0" },
+    error: { text: "SAVE FAILED", color: "#ff6a55", blink: true },
+    conflict: { text: "SAVE CONFLICT", color: "#ff6a55", blink: true },
+  };
+  const m = meta[s.phase];
+  return (
+    <span
+      className={cn("num shrink-0 border px-1.5 py-[1px] text-[8.5px] uppercase tracking-[0.12em]", m.blink && "blink")}
+      style={{ color: m.color, borderColor: `${m.color}55`, background: `${m.color}12` }}
+      title={
+        s.lastSavedAt
+          ? `Last confirmed server write: ${new Date(s.lastSavedAt).toLocaleTimeString()}`
+          : "No server write confirmed in this tab yet"
+      }
+    >
+      {m.text}
+    </span>
   );
 }
 
