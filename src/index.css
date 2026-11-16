@@ -1,0 +1,313 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --font-display: "Archivo", "Archivo Expanded", system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-ink-950: #070d10;
+  --color-ink-900: #0a1114;
+  --color-ink-850: #0d161a;
+  --color-ink-800: #111d22;
+  --color-ink-750: #15242a;
+  --color-ink-700: #1b2f36;
+  --color-ink-600: #24424b;
+  --color-line: #1e343b;
+
+  --color-chalk: #e9f2f3;
+  --color-mist: #9bb2b8;
+  --color-dim: #647c84;
+
+  --color-signal: #f2a33c;
+  --color-teal: #35d6c0;
+  --color-coral: #ff6a55;
+  --color-sky2: #6fb7ff;
+  --color-moss: #a3cb4d;
+  --color-rust: #ff8347;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: var(--color-chalk);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ---------- Type helpers ---------- */
+.display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-stretch: 112%;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Surfaces ---------- */
+.panel {
+  background: linear-gradient(180deg, rgba(21, 36, 42, 0.92), rgba(13, 22, 26, 0.94));
+  border: 1px solid var(--color-line);
+}
+.panel-flat {
+  background: rgba(10, 17, 20, 0.72);
+  border: 1px solid var(--color-line);
+}
+.hairline {
+  border-color: var(--color-line);
+}
+.inset-shadow {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* ---------- Ambient backdrop ---------- */
+.topo {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+.topo-drift {
+  animation: drift 90s linear infinite;
+}
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-240px, -160px, 0);
+  }
+}
+
+/* ---------- Motion ---------- */
+@keyframes pulseRing {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  animation: pulseRing 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: riseIn 0.42s cubic-bezier(0.16, 0.84, 0.34, 1) both;
+}
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.slide-in {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 0.84, 0.34, 1) both;
+}
+@keyframes ticker {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 40px 0;
+  }
+}
+.hazard {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(242, 163, 60, 0.5) 0 6px,
+    rgba(242, 163, 60, 0) 6px 12px
+  );
+  animation: ticker 1.2s linear infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+.blink {
+  animation: blink 1.4s ease-in-out infinite;
+}
+@keyframes spinSlow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spinSlow 8s linear infinite;
+}
+
+/* ---------- Controls ---------- */
+button {
+  font-family: inherit;
+}
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--color-line);
+  background: rgba(21, 36, 42, 0.7);
+  color: var(--color-chalk);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.3, 1), background 0.16s, border-color 0.16s,
+    box-shadow 0.16s, color 0.16s;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  background: rgba(36, 66, 75, 0.85);
+  border-color: var(--color-ink-600);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+}
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--color-signal);
+  border-color: #ffbe6a;
+  color: #23160a;
+  box-shadow: 0 6px 22px -10px rgba(242, 163, 60, 0.9);
+}
+.btn-primary:hover:not(:disabled) {
+  background: #ffb552;
+  border-color: #ffd39a;
+  color: #23160a;
+}
+.btn-teal {
+  background: rgba(53, 214, 192, 0.14);
+  border-color: rgba(53, 214, 192, 0.5);
+  color: var(--color-teal);
+}
+.btn-teal:hover:not(:disabled) {
+  background: rgba(53, 214, 192, 0.24);
+  border-color: var(--color-teal);
+}
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: var(--color-chalk);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-dim);
+}
+.field {
+  width: 100%;
+  background: rgba(7, 13, 16, 0.8);
+  border: 1px solid var(--color-line);
+  padding: 0.45rem 0.6rem;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.field:focus {
+  border-color: rgba(53, 214, 192, 0.65);
+  box-shadow: 0 0 0 3px rgba(53, 214, 192, 0.12);
+}
+
+/* ---------- Scrollbars ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 0;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(7, 13, 16, 0.5);
+}
+
+/* ---------- Leaflet skin ---------- */
+.leaflet-container {
+  background: #0a1114;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.leaflet-tile-pane {
+  filter: saturate(0.35) brightness(0.62) contrast(1.18) hue-rotate(160deg);
+}
+.leaflet-control-attribution {
+  background: rgba(7, 13, 16, 0.82) !important;
+  color: var(--color-dim) !important;
+  font-family: var(--font-mono);
+  font-size: 9px !important;
+  border: 1px solid var(--color-line);
+}
+.leaflet-control-attribution a {
+  color: var(--color-mist) !important;
+}
+.leaflet-control-zoom {
+  border: 1px solid var(--color-line) !important;
+}
+.leaflet-control-zoom a {
+  background: rgba(13, 22, 26, 0.94) !important;
+  color: var(--color-mist) !important;
+  border-color: var(--color-line) !important;
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(36, 66, 75, 0.95) !important;
+  color: var(--color-chalk) !important;
+}
+.spz-popup .leaflet-popup-content-wrapper {
+  background: rgba(10, 17, 20, 0.96);
+  color: var(--color-chalk);
+  border: 1px solid var(--color-ink-600);
+  border-radius: 2px;
+  font-family: var(--font-sans);
+}
+.spz-popup .leaflet-popup-tip {
+  background: rgba(10, 17, 20, 0.96);
+  border: 1px solid var(--color-ink-600);
+}
