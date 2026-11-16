@@ -18,7 +18,8 @@
 
 ## Validation evidence
 
-- [ ] `npx tsc --noEmit` (result: )
+- [ ] `npm run typecheck` (result: )
+- [ ] `npm test` (result: )
 - [ ] `npm run build` (result: )
 - Happy path:
 - Edge/boundary:

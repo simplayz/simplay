@@ -1,0 +1,10 @@
+import { openDatabase } from '../src/server/database';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+const target = process.argv[2];
+if (!target) throw new Error('Usage: npm run db:backup -- ./backups/name.sqlite');
+mkdirSync(dirname(target), { recursive: true });
+const db = openDatabase();
+await db.sqlite.backup(target);
+db.sqlite.close();
+console.log('Consistent SQLite backup completed.');

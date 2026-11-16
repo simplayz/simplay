@@ -1,4 +1,4 @@
-# Arena change-request prompt — v1
+# Arena change-request prompt — v2
 
 2026-11-16. This is a reusable instruction prompt, not a runtime executive prompt. Fill bracketed fields, remove inapplicable fields, and paste the block into Arena. It assumes the agent can inspect this repository; if it cannot, provide the referenced source excerpts instead of asking it to guess.
 
@@ -16,7 +16,7 @@ The agent's final response has four headings: **Implemented**, **Validation**, *
 ## Copyable prompt
 
 ```text
-Simplayz change request — template v1
+Simplayz change request — template v2
 
 Read AGENTS.md and README.md, then only the relevant architecture/design/testing
 sections and source files. Inspect the current diff before editing. Work on the
@@ -50,8 +50,8 @@ Give every changed cost/reward/duration/cooldown a rationale. Keep docs and in-a
 reference aligned where touched, version significant design/prompt changes and
 update CHANGELOG.md. Do not fix unrelated known gaps silently.
 
-Run npx tsc --noEmit and npm run build. There is no existing test/lint script;
-report manual checks honestly and add focused tests if permitted by scope.
+Run npm run typecheck, npm test, and npm run build. Vitest covers DB/API/queue/store;
+report manual and optional Playwright checks honestly. No lint script exists.
 Never share raw saves or keys. If model evaluation is unavailable, report NOT RUN;
 do not claim prompt reliability from a mock or a build.
 
@@ -74,4 +74,5 @@ For executive-prompt changes, independently test at least: (1) provided digest w
 
 ## Changelog
 
+- v2 — 2026-11-16: Next.js/SQLite validation commands; output contract and three evaluation fixtures retained, live-model testing NOT RUN.
 - v1 — 2026-11-16: initial output contract, scoped implementation prompt and three evaluation fixtures; no live model testing performed.

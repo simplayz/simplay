@@ -1,3 +1,4 @@
+import { escapeHtml } from '../utils/escapeHtml';
 import L from "leaflet";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AREA_META, ARCHETYPES, ARCHETYPE_BY_ID, ROAD_GRADES } from "../game/constants";
@@ -115,7 +116,7 @@ export default function WorldMap() {
     })
       .addTo(lg)
       .bindTooltip(
-        `<b>${state.company}</b><br/>${claim.sideKm}×${claim.sideKm} km · ${claim.sideKm ** 2} km²`,
+        `<b>${escapeHtml(state.company)}</b><br/>${claim.sideKm}×${claim.sideKm} km · ${claim.sideKm ** 2} km²`,
         { className: "spz-popup", sticky: true },
       );
 
@@ -183,7 +184,7 @@ export default function WorldMap() {
       L.marker([b.lat, b.lng], {
         icon: L.divIcon({
           className: "",
-          html: BOT_HTML(color, b.kind === "supplier" ? "◈" : "▤", b.name.split(" ")[0]),
+          html: BOT_HTML(color, b.kind === "supplier" ? "◈" : "▤", escapeHtml(b.name.split(" ")[0])),
           iconSize: [0, 0],
         }),
       })
@@ -209,7 +210,7 @@ export default function WorldMap() {
           .addTo(lg)
           .on("click", () => setSel({ t: "peer", id: p.id }));
         L.marker([p.lat, p.lng], {
-          icon: L.divIcon({ className: "", html: PEER_HTML(p.color, p.handle[1].toUpperCase(), p.online), iconSize: [0, 0] }),
+          icon: L.divIcon({ className: "", html: PEER_HTML(p.color, escapeHtml(p.handle.charAt(1).toUpperCase() || "?"), p.online), iconSize: [0, 0] }),
         })
           .addTo(lg)
           .on("click", () => setSel({ t: "peer", id: p.id }));

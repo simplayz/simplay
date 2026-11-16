@@ -1,43 +1,38 @@
-# Decisions, risks and open questions — v1.0
+# Decisions and remaining risks — v2.0
 
-Audit 2026-11-16, baseline `294a75c`. Priority is a recommendation, not an approved implementation backlog. This documentation change fixes none of the runtime issues below.
+2026-11-16. User-approved migration scope: Next.js App Router, Node runtime, single-server SQLite, anonymous isolated saves, client-driven simulation, no economy redesign or multiplayer authority.
 
-## Confirmed direction vs provisional defaults
+## Accepted migration decisions
 
-**User-confirmed direction:** Simplayz is intended to be a multiplayer world simulation using the same real-world map based on OpenStreetMap.
+- Next 16.4.6, React 19.2.6, Node 22.22.3, better-sqlite3 13.2.0, Drizzle 0.45.4; package lock is authoritative.
+- SQLite WAL, transactional ordered SQL migration baseline using user_version; database version 1, game schema 4, revision independent. Full-repository `next start`, not standalone/serverless packaging.
+- Random HttpOnly/SameSite anonymous cookie; DB stores hash only. No accounts/recovery; clearing cookies loses access. Save ownership comes only from session cookie.
+- Game remains client-rendered/client-simulated. Validated snapshots protect storage integrity, not cheating. Economic debt/overshoot/exploits are not silently rewritten.
+- Four-second non-resetting autosave deadline, serialized/coalesced writes, CAS conflicts. Normal continuous accelerated play can save without tick starvation; network latency/browser throttling can exceed cadence. Unload durability is not guaranteed.
+- Legacy keys removed before upload; opt-in migration and explicit replacement choice. JSON imports/exports are validated/sanitized. Selecting server dismisses legacy offer once while leaving redacted data. Malformed non-JSON legacy data is never interpreted/uploaded and may need manual private recovery.
+- Operator-only AI environment credentials; configured HTTPS endpoint/model, bounded requests and local fallback. No arbitrary URL proxy, browser BYOK or database secret encryption feature.
 
-**Existing prototype defaults, not confirmed product decisions:** 64 km² claims, four sectors × five sites, 20 archetypes, desktop-first interiors, 10–15 minute sessions, local persistence, simulated peers, SDLC construction and OpenAI-compatible advisors. These are playable hypotheses. See `OPEN_QUESTIONS` (`q1`–`q12`) in `src/game/constants.ts`. In-app question answers are saved text only; they do not reconfigure game rules.
+## Audit risks: disposition
 
-## Known risks / source discrepancies
+| ID | Status / remaining concern |
+| --- | --- |
+| R1: plaintext game API keys | Credential fields removed, legacy/schema boundaries sanitize, exports clean; server environment credentials only. Old exports/backups must be revoked/redacted by owners. Company/location/chat data still private. |
+| R2: schema-only validation | Replaced with full entity/plan/bounds validation and important reference/uniqueness checks. This is not anti-cheat or proof of all semantic game invariants. |
+| R3: fast-tick save starvation | Replaced with tested queue and visible retry/conflict. Pending changes remain volatile until acknowledged; SQLite/network failures still possible. |
+| R4: no shared authority | Still true by design. Generated peers/roads/online flags are not live humans. |
+| R5: non-replayable RNG/time | Still true. `Math.random`/`Date.now` remain in reducer; simulation/StrictMode determinism not changed. |
+| R6: advisor correctness | Server timeout added; duplicated latest user turn, hardcoded local advice and netCredits/dividend mismatch remain. Prompt grounding/word limit are not model-tested guarantees. |
+| R7: geometry | Overlap, polar/antimeridian approximation and synthetic five-point roads remain; transport bounds reject invalid coordinates rather than making a global registry. |
+| R8: economy | Cancel-before-spend salvage, phase-boundary spending and late change-request bounds remain unchanged. |
+| R9: rationale drift | Opening overflow, catalogue power rationale and some opening resource claims remain unvalidated. |
+| R10: tests | Vitest DB/API/queue/jsdom tests added; browser test scaffold added. Full rendered gameplay not executed here because Chromium lacks system libraries. |
+| R11: operational readiness | HTTPS/private persistent storage/backup ownership required. Single-process rate limits are not distributed protection; session creation globally limited, no session garbage collection/account recovery. No project license/production compliance audit. |
 
-| ID | Impact and evidence | Recommended handling in a future scoped change |
-| --- | --- | --- |
-| R1 | **High: secret/privacy exposure.** AI keys, identity and claim location live in `GameState`; store persists it, GDD exports it, advisor sends a digest/history externally. | Redact exports and design server-side credential custody; define data consent/retention. Never share raw saves. |
-| R2 | **High: untrusted saves.** GDD schema-only check and direct `hydrate`; startup checks schema/claim only. Malformed matching-schema saves may crash views. | Runtime validation, reference integrity checks and safe error recovery before hydration. |
-| R3 | **High: save starvation.** 700 ms debounce is reset by 250/62.5 ms ticks at 4×/16×. Quota failures are silent. | Define maximum unsaved duration and visible failure; test reload during accelerated play. |
-| R4 | **High: no shared authority.** Generated peers/online flags, local actions and synthetic claims. | Decide server model, ownership and conflict resolution before multiplayer implementation. |
-| R5 | **Medium: simulation is not pure/replayable.** Engine calls `Math.random` and `Date.now`, contrary to its header. React runs under StrictMode. | Control RNG/time for tests; evaluate replay-safe actions before authoritative networking. |
-| R6 | **Medium: advisor correctness/liveness.** No request timeout; duplicated latest user turn; local text includes static balance assertions. `flows.revenue` includes civic dividend but `netCredits` excludes it, affecting displayed/digested runway. | Choose canonical accounting semantics; test digest/advice against formulas; add timeout separately if requested. |
-| R7 | **Medium: geometry overclaims.** Free-selected centers can overlap; small-angle boxes are not a globally tiled land registry. q8 says 3-node road bend; actual path has five points and is not OSM routing. | Specify claim geometry/conflicts and routing provider/budget. Do not treat comments as guarantees. |
-| R8 | **Medium: economic exploits/bounds need tests.** Cancellation adds a fraction of unspent budget even before any debit; phase draws may overshoot on boundary ticks; change requests lack a treasury guard. | Agree escrow/refund/debt semantics, then add conservation/boundary tests. Do not silently rebalance in docs work. |
-| R9 | **Medium: rationale drift.** Opening stocks total 1,600 units against 400 base capacity; Aquaponics says “25% more power” but table draws 55 vs Farm 70; some opening-food/material rationales are stale. | Reconcile descriptions with measured behavior. Rationale is a hypothesis, not verified balance data. |
-| R10 | **Medium: missing regression infrastructure.** No test runner/lint/CI scripts; build does not typecheck. | Add focused tests in a separately scoped change; use documented manual checks now. |
-| R11 | **Medium: service/rights readiness.** External OSM tiles/fonts, browser API CORS, no project LICENSE. | Review tile policy, attribution, hosting and distribution rights before launch; don't invent a license. |
+## Open product decisions
 
-## Decisions needed for a shared world
-
-1. One persistent planet or instanced worlds with asynchronous visits? What does “same map” mean for ownership and visibility?
-2. Who owns simulation time: continuously running server, per-session, or scheduled catch-up? What happens offline?
-3. Identity/account recovery, region/shard scope and authoritative action validation?
-4. Exact claim geometry/size, overlapping claims, water/protected land, antimeridian and location privacy?
-5. Multiplayer writes: who may edit/visit/trade; atomicity, cooldown authority and anti-duplication rules?
-6. OSM as visual basemap only or terrain/buildings/roads as gameplay data? Provider, caching, licensing and query budget?
-7. Production AI providers/models/temperatures, budget, retention, latency target and credential handling?
-8. Economy goals: target session length, recovery floor, escrow/refunds, inflation/sinks and any monetization constraints?
-9. Target devices and accessibility; are touch interiors in scope?
-
-Resolve only the decisions needed for the next change. Do not block a local UI fix on the entire roadmap. Record accepted decisions with date, user authority, rationale, alternatives and affected files/tests.
+World sharing/claim conflict policy, server time/offline progression, account identity/permissions, exact land geometry/protected areas/location privacy, multiplayer transaction authority, OSM gameplay-data licensing/provider budget, AI privacy/consent/cost policies, economy targets/monetization and device accessibility remain unresolved. Prototype questions in constants are defaults, not user-approved final design. Recorded question answers do not execute rule changes.
 
 ## Revision log
 
-- v1.0 — 2026-11-16: repository audit and separation of confirmed vision from prototype assumptions. No product decisions newly approved.
+- v2.0 — 2026-11-16: infrastructure migration choices and audited risk dispositions.
+- v1.0 — 2026-11-16: initial Vite/localStorage risk audit; superseded for infrastructure only.

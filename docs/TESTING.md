@@ -1,50 +1,64 @@
-# Validation guide — v1.0
+# Validation guide — v2.0
 
-## Verified baseline (2026-11-16)
+2026-11-16, Next.js/SQLite migration. Node 22.22.3 / npm 10.9.8.
 
-On Node 22.22.3 / npm 10.9.8:
+## Evidence
 
 | Check | Result |
 | --- | --- |
-| `npm ci` | PASS; 106 packages installed; npm audit reported 0 vulnerabilities at execution time |
-| `npx tsc --noEmit` | PASS |
-| `npm run build` | PASS; Vite single-file output `dist/index.html` |
-| Browser gameplay, live tiles, geolocation, WebGL, save/reload | NOT RUN in this documentation audit |
-| Production AI evaluation | NOT RUN; no authorized provider/key/model evaluation available |
+| Clean install | PASS with `npm_config_nodedir=/usr/local npm ci`; plain `npm ci` failed on blocked nodejs.org header download; use local headers in this sandbox |
+| Native better-sqlite3 load and SQLite query | PASS (SQLite 3.54.1 reported) |
+| `npm run db:migrate` | PASS; schema version 1 initialized |
+| `npm run typecheck` | PASS |
+| `npm test` | PASS; 22 tests across persistence/API/queue and jsdom store tests at initial migration validation (final rerun after changes) |
+| `npm run build` | PASS; Next 16.4.6 production App Router build, game `/`, Node `/api/game`, `/api/advisor` |
+| Actual Next dev HTTP `/`, GET/PUT save, cookie issuance, isolated second session | PASS; synthetic test company persisted |
+| Actual server restart | PASS; dev server stopped, production server started with same DB/session, save and revision retained; Secure production cookie verified |
+| Online backup / migration rerun | PASS; SQLite backup API completed while server running, backup database migration rerun successful |
+| DB close/reopen and migration rerun | PASS automated; revision/data retained |
+| Full rendered browser gameplay and Playwright smoke | NOT RUN successfully; attempted Chromium launch failed due missing `libnspr4.so`; no WebGL/map/hydration correctness claim |
+| Live OSM tiles, geolocation, Google Fonts, real AI provider/model | NOT RUN; remote access/consent not available |
 
-These are baseline checks, not proof of correctness/security or a guarantee that services work. There is no test runner, lint script or CI workflow. Do not invent `npm test` results. `dist/` is generated and ignored.
+For final check results and any added test counts, see the migration response. HTTP tests are not browser gameplay tests; jsdom store tests are not rendering Leaflet/Three.js. Mocked advisor tests are not model evaluations.
 
-## Smoke protocol for the next runtime change
+## Automated contracts
 
-Use a disposable browser profile/save. Do not reset a player's real save. Record commit, browser/device, start fixture, speed, actions, observed outcome, console/network errors and pass/fail. Pause time before inspecting values; screenshot results where useful. A browser's inability to reach a remote service is a limitation to report, not a reason to claim gameplay passed.
+`npm test` runs Vitest (test-only Vite transform dependency; no Vite application framework remains). Tests use isolated in-memory/temp SQLite databases, synthetic player state, mocked upstream requests and fake queue timers. The production `server-only` marker is aliased only in test configuration.
 
-| Case | Procedure | Expected observation / diagnostic |
-| --- | --- | --- |
-| Happy: new company | Start fresh, enter CEO/company, click map point, register; navigate keys 1–6 | Claim and console appear; screens switch without uncaught errors; map attribution remains visible |
-| Happy: demo | Load demo, inspect territory/pipeline/studio/board/diplomacy | Existing assets and simulated neighbors visible; local board advice works without a key |
-| Happy: construction | Select valid empty matching-tier site, commission, observe all phases with sufficient funds/materials | Project/site stay linked; Deploy produces one building using the draft plan; occupied site cannot be recommissioned |
-| Edge: clock | Pause, observe tick; run 1×/4×/16×, then pause | Pause stops tick advancement; faster speeds increase cadence. Do not assume exact wall-clock under browser throttling |
-| Edge: limits | Attempt seventh active project, wrong sector/tier, occupied site | State remains valid; cap logs alert; no duplicate project/building assignment |
-| Edge: plan consistency | Edit project draft, deploy, compare 2D and 3D; exit pointer lock and switch screen | Authored layout retained; doors/walls/collision coherent; scene/map listeners cleaned up on remount |
-| Edge: save | At 1× pause for >700 ms then reload; repeat reload while actively at 4×/16× | Normal paused save should restore; accelerated-save staleness is a known risk (R3), not a passing guarantee |
-| Failure: resource block | Reach Approve with insufficient money/materials, then restore resources | Blocked reason shown; gate rechecks and recovers on subsequent tick |
-| Failure: AI | Disable AI/use empty key; separately simulate non-OK/empty response | Local response for no key; network/format error surfaces with fallback. Hanging-request recovery is NOT implemented |
-| Failure: import/storage | In disposable profile import bad JSON/wrong schema, then test malformed schema-4 save separately | Bad JSON/wrong schema refused; malformed matching-schema data may crash (R2). Quota failure may be silent; capture as risk |
-| Failure: geolocation/tiles | Deny geolocation; block tile network request | Manual point/demo remain alternative onboarding paths; record tile-failure UX without assuming offline tiles exist |
+- Full save entity/reference validation, demo/long-running state and legitimate negative credits.
+- Legacy credential removal, non-secret preference preservation, invalid/non-finite/oversized rejection.
+- Session creation, save/read/revision increment, isolation, rejected owner injection and unauthorized writes.
+- Same-origin/header/content/size protections, invalid writes preserve prior valid snapshot.
+- Concurrent stale writes: exactly one succeeds; reset increments revision and clears snapshot/preferences.
+- SQLite query-only write failure returns generic error; DB close/reopen preserves data.
+- Advisor operator config/model/credentials, missing config, timeout, empty and non-OK upstream fallback path.
+- Queue tick intervals 1,000/250/62.5 ms do not reset oldest deadline; one write in flight; explicit retry and conflict halt.
+- Store initial loading gate, no hydrated-default overwrite, failed-load retry, retained memory on write failure, explicit legacy migration/server coexistence, delete legacy only after acknowledged save, reset confirmation.
 
-## Targeted regression contracts
+## Browser protocol
 
-For engine changes, add a focused test harness if in scope. Fixtures should use `createGame`, stable IDs and controlled `Math.random`/`Date.now` (restore mocks afterward). Seeded geo/plan helpers do not make the whole engine deterministic. Avoid snapshots with keys or real player coordinates.
+On a system with Playwright dependencies:
 
-- Construction: valid/invalid start, six-project cap, funding unblock, first/second QA rework and third-attempt signoff; draft promotion exactly once.
-- Money/materials: conservation across approval, build phase overshoot, rework, cancel-before-spend, negative cash and late change requests. Agree expected behavior before locking exploit-like behavior into tests.
-- Trades: cooldown at hours 5 vs 6, cap, zero/negative/non-finite/fractional quantities, insufficient bot purse/player stock, forbidden commodities; only successful trade changes stocks/relations/cooldown.
-- Operations: power equality vs 1 kW short, condition 40 vs below 40, zero food, exact/over capacity, maintenance insufficient funds, price bounds and level thresholds.
-- Persistence: full shape/reference validation, wrong/older schema, corrupt data, secret redaction, quota failures, accelerated saving and explicit migration/reset policy where touched.
-- Presentation: StrictMode mount/unmount, Leaflet layers/listeners, Three.js disposal, keyboard typing guard, pointer-lock exit, reachable navigation and OSM attribution.
+```sh
+npx playwright install --with-deps chromium
+npm run dev
+# in another shell
+npm run test:browser
+```
 
-Known gaps are not asserted as desired long-term behavior. When fixing one, write a regression test for the agreed correction and update `DECISIONS.md`.
+`tests/browser/smoke.spec.ts` is a basic demo/navigation/reload/attribution smoke, not exhaustive gameplay coverage. Use a disposable profile/database. Record browser, fixture, steps, console/network failures and observed results. Pause before comparing values.
 
-## Prompt evaluation record
+Required manual extensions: new company/manual/GPS-denied onboarding; demo screens 1–6; commission through QA/Deploy; design draft 2D→3D, doors/collision/exit pointer lock; board disabled/server-error local fallback; valid/invalid JSON import/export; 1×/4×/16× saves/reload; two contexts and two tabs sharing a cookie; conflict export/load/replace; interrupted save/retry; persistent-volume server restart; confirmed reset/reload; denied tiles/fonts and StrictMode scene/map remount cleanup.
 
-For each prompt revision record: prompt version, expected output contract, fixture ID, exact provider/model version, temperature, date, request settings, redacted response, pass/fail against each criterion, latency/cost if available, and limitations. Include happy/edge/failure. Mocked API tests prove integration handling, not live-model compliance. Only claim production-model validation after authorized runs on that actual model and temperature.
+## Future engine changes
+
+Control `Math.random`/`Date.now`; seeded geo helpers do not make simulation deterministic. Cover six-project cap, funding unblock, QA retries/third signoff, draft promotion, maintenance at condition 40/below, power equality/shortage, storage boundary, cooldown 5 vs 6 hours, stock/purse conservation, price bounds and progression thresholds. Known economic exploits are not approved balance rules; agree corrections before locking them into tests.
+
+## Prompt evaluation
+
+See `docs/prompts/EXECUTIVES.md`. Record exact provider/model/version/temperature, prompt version, happy/edge/failure fixture, redacted input/output, per-criterion result and latency/cost when available. No authorized live model evaluation was performed. Never send real keys/location-bearing saves for tests.
+
+## Revision log
+
+- v2.0 — 2026-11-16: automated SQLite/API/queue/store coverage and Next validation, browser limitation disclosed.
+- v1.0 — 2026-11-16: Vite baseline audit; superseded for infrastructure.
